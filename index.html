@@ -126,12 +126,48 @@ const navItems = [
 ];
 
 const features = [
-  { title: "Penjualan (POS)", desc: "Proses transaksi cepat dan mudah dengan tampilan kasir yang intuitif.", icon: ShoppingCart },
-  { title: "Kelola Stok Barang", desc: "Pantau stok barang secara real-time, dengan peringatan stok menipis.", icon: Boxes },
-  { title: "Barcode Generator", desc: "Buat, cetak, dan scan barcode produk dengan mudah.", icon: BarcodeIcon },
-  { title: "Laporan Lengkap", desc: "Laporan penjualan, produk, pelanggan, dan keuangan secara detail.", icon: PieIcon },
-  { title: "Manajemen Produk", desc: "Kelola produk, kategori, variasi, dan harga dengan praktis.", icon: Tag },
-  { title: "Multi Pengguna", desc: "Kelola banyak pengguna dengan hak akses yang berbeda.", icon: UserCog },
+  {
+    title: "Penjualan (POS)",
+    desc: "Proses transaksi cepat dan mudah dengan tampilan kasir yang intuitif.",
+    icon: ShoppingCart,
+    points: ["Scan barcode via keyboard scanner otomatis", "Keranjang & pembayaran satu klik", "Invoice tercetak otomatis tiap transaksi"],
+  },
+  {
+    title: "Kelola Stok Barang",
+    desc: "Pantau stok barang secara real-time, dengan peringatan stok menipis.",
+    icon: Boxes,
+    points: ["Tambah/kurangi stok langsung dari daftar produk", "Notifikasi stok menipis di dashboard", "Stok otomatis kembali saat transaksi dibatalkan"],
+  },
+  {
+    title: "Barcode Generator",
+    desc: "Buat, cetak, dan scan barcode produk dengan mudah.",
+    icon: BarcodeIcon,
+    points: ["Barcode 13 digit dibuat otomatis per produk", "Cetak satu produk atau semua produk sekaligus", "Atur jumlah label cetak per produk"],
+  },
+  {
+    title: "Laporan Lengkap",
+    desc: "Laporan penjualan, produk, pelanggan, dan keuangan secara detail.",
+    icon: PieIcon,
+    points: ["Grafik omzet & transaksi 7 hari terakhir", "Riwayat lengkap semua invoice", "Batalkan transaksi, stok otomatis disesuaikan"],
+  },
+  {
+    title: "Manajemen Produk",
+    desc: "Kelola produk, kategori, variasi, dan harga dengan praktis.",
+    icon: Tag,
+    points: ["Tambah, edit, hapus produk kapan saja", "Kelola data pelanggan & supplier terpisah", "Semua perubahan tersimpan otomatis"],
+  },
+  {
+    title: "Multi Pengguna",
+    desc: "Kelola banyak pengguna dengan hak akses yang berbeda.",
+    icon: UserCog,
+    points: ["Login aman untuk tiap staf toko", "Level akses Kasir & Admin", "Profil pengguna tampil di setiap sesi"],
+  },
+  {
+    title: "Cadangan & Pemulihan Data",
+    desc: "Amankan seluruh data toko kapan saja, pindahkan ke perangkat lain dengan mudah.",
+    icon: Download,
+    points: ["Ekspor semua data ke file JSON", "Impor data untuk pindah perangkat", "Reset ke kondisi awal bila diperlukan"],
+  },
 ];
 
 const rupiah = (n) => "Rp " + n.toLocaleString("id-ID");
@@ -404,9 +440,19 @@ function LandingPage({ onLogin, settings }) {
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {features.map((f) => (
             <button key={f.title} onClick={onLogin} className="text-left bg-white border border-slate-100 rounded-2xl p-6 shadow-sm hover:shadow-md hover:border-violet-200 transition-all">
+              <div className="w-11 h-11 rounded-xl bg-violet-50 flex items-center justify-center mb-4">
+                <f.icon className="w-5 h-5 text-violet-600" />
+              </div>
               <h3 className="font-bold text-slate-900 mb-1.5">{f.title}</h3>
-              <p className="text-sm text-slate-500 mb-6 leading-relaxed">{f.desc}</p>
-              <f.icon className="w-6 h-6 text-violet-500" />
+              <p className="text-sm text-slate-500 mb-3 leading-relaxed">{f.desc}</p>
+              <ul className="flex flex-col gap-1.5">
+                {f.points.map((pt) => (
+                  <li key={pt} className="flex items-start gap-1.5 text-xs text-slate-500">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
+                    <span>{pt}</span>
+                  </li>
+                ))}
+              </ul>
             </button>
           ))}
         </div>
