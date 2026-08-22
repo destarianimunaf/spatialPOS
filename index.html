@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
-<title>spatialPOS — Kasir &amp; Manajemen Toko</title>
+<title>JAWARA — Kasir &amp; Manajemen Toko</title>
 <meta name="description" content="Aplikasi kasir (POS) React: penjualan, produk, stok, barcode, member, supplier, laporan — jalan penuh di browser, data tersimpan otomatis." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%237c3aed%22/><text x=%2250%22 y=%2266%22 font-size=%2255%22 text-anchor=%22middle%22 fill=%22white%22 font-family=%22sans-serif%22>S</text></svg>" />
 
@@ -30,8 +30,9 @@
   html, body { background:#f8fafc; }
   @media print {
     body * { visibility: hidden; }
-    #invoice-print, #invoice-print * { visibility: visible; }
-    #invoice-print { position: absolute; inset: 0; }
+    #invoice-print, #invoice-print *,
+    #barcode-print, #barcode-print * { visibility: visible; }
+    #invoice-print, #barcode-print { position: absolute; inset: 0; }
   }
 </style>
 </head>
@@ -183,7 +184,7 @@ function Logo({ logoUrl }) {
         </div>
       )}
       <span className="text-lg font-bold tracking-tight text-slate-900">
-        spatial<span className="text-amber-500">POS</span>
+        JA<span className="text-amber-500">WARA</span>
       </span>
     </div>
   );
@@ -202,7 +203,7 @@ function Toast({ message }) {
 function CopyrightFooter({ className }) {
   return (
     <p className={className || "text-center text-xs text-slate-400"}>
-      © 2026 spatialPOS — All Rights Reserved. DestaLabs.
+      © 2026 JAWARA — All Rights Reserved. DestaLabs.
     </p>
   );
 }
@@ -280,7 +281,7 @@ function LoginPage({ onLogin, onBack, settings }) {
   const [error, setError] = useState("");
 
   const fillDemo = () => {
-    setEmail("demo@spatialpos.id");
+    setEmail("demo@jawara.id");
     setPassword("demo123");
     setError("");
   };
@@ -303,7 +304,7 @@ function LoginPage({ onLogin, onBack, settings }) {
         <button onClick={onBack} className="text-xs font-medium text-slate-400 hover:text-slate-600 mb-4">← Kembali ke beranda</button>
         <div className="mb-6"><Logo logoUrl={settings.logoUrl} /></div>
         <h1 className="text-xl font-bold text-slate-900 mb-1">Masuk ke akun Anda</h1>
-        <p className="text-sm text-slate-500 mb-6">Gunakan akun demo untuk mencoba semua fitur spatialPOS.</p>
+        <p className="text-sm text-slate-500 mb-6">Gunakan akun demo untuk mencoba semua fitur JAWARA.</p>
 
         <button onClick={fillDemo} className="w-full mb-5 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-amber-300 bg-amber-50 text-amber-700 text-sm font-semibold hover:bg-amber-100">
           <Sparkles className="w-4 h-4" /> Isi Data Demo
@@ -371,7 +372,7 @@ function LandingPage({ onLogin, settings }) {
             Point of Sale Modern &amp; Lengkap
           </div>
           <h1 className="text-4xl sm:text-5xl font-extrabold leading-[1.1] tracking-tight text-slate-900">
-            Kelola Toko Anda Lebih Mudah dengan <span className="text-violet-600">spatial<span className="text-amber-500">POS</span></span>
+            Kelola Toko Anda Lebih Mudah dengan <span className="text-violet-600">JA<span className="text-amber-500">WARA</span></span>
           </h1>
           <p className="mt-5 text-slate-500 text-base sm:text-lg max-w-lg">
             Solusi kasir digital untuk mengelola penjualan, stok barang, pelanggan, hingga laporan bisnis dalam satu sistem yang mudah digunakan.
@@ -424,7 +425,7 @@ function LandingPage({ onLogin, settings }) {
           </div>
           <div className="text-white">
             <h3 className="text-xl font-bold mb-2">Siap Mengembangkan Bisnismu?</h3>
-            <p className="text-violet-100 text-sm mb-5 max-w-md">Bergabunglah dengan ribuan pengguna spatialPOS dan kelola toko Anda dengan lebih efisien.</p>
+            <p className="text-violet-100 text-sm mb-5 max-w-md">Bergabunglah dengan ribuan pengguna JAWARA dan kelola toko Anda dengan lebih efisien.</p>
             <button onClick={onLogin} className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-amber-400 text-violet-900 font-semibold text-sm hover:bg-amber-300">
               Coba Gratis Sekarang <ArrowRight className="w-4 h-4" />
             </button>
@@ -550,32 +551,34 @@ function InvoiceModal({ invoice, settings, onClose }) {
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 max-h-[90vh] overflow-y-auto">
-        <div className="text-center mb-4">
-          {settings.logoUrl && (
-            <img src={settings.logoUrl} alt="Logo toko" className="w-12 h-12 rounded-lg object-cover mx-auto mb-2" />
-          )}
-          <p className="font-bold text-slate-900">{settings.storeName}</p>
-          <p className="text-xs text-slate-500">{settings.address}</p>
-          <p className="text-xs text-slate-500">{settings.phone}</p>
+        <div id="invoice-print">
+          <div className="text-center mb-4">
+            {settings.logoUrl && (
+              <img src={settings.logoUrl} alt="Logo toko" className="w-12 h-12 rounded-lg object-cover mx-auto mb-2" />
+            )}
+            <p className="font-bold text-slate-900">{settings.storeName}</p>
+            <p className="text-xs text-slate-500">{settings.address}</p>
+            <p className="text-xs text-slate-500">{settings.phone}</p>
+          </div>
+          <div className="border-t border-b border-dashed border-slate-200 py-2 mb-2 text-xs text-slate-500 flex justify-between">
+            <span>{invoice.id}</span>
+            <span>{invoice.time}</span>
+          </div>
+          <div className="flex flex-col gap-1.5 mb-3">
+            {invoice.items.map((it) => (
+              <div key={it.name} className="flex justify-between text-sm">
+                <span className="text-slate-600">{it.name} <span className="text-slate-400">x{it.qty}</span></span>
+                <span className="text-slate-800 font-medium">{rupiah(it.price * it.qty)}</span>
+              </div>
+            ))}
+          </div>
+          <div className="border-t border-dashed border-slate-200 pt-2 flex justify-between font-bold text-violet-700">
+            <span>Total</span>
+            <span>{rupiah(invoice.total)}</span>
+          </div>
+          <p className="text-center text-xs text-slate-400 mt-4">Terima kasih telah berbelanja!</p>
+          <p className="text-center text-[10px] text-slate-300 mt-1">JAWARA © 2026 DestaLabs</p>
         </div>
-        <div className="border-t border-b border-dashed border-slate-200 py-2 mb-2 text-xs text-slate-500 flex justify-between">
-          <span>{invoice.id}</span>
-          <span>{invoice.time}</span>
-        </div>
-        <div className="flex flex-col gap-1.5 mb-3">
-          {invoice.items.map((it) => (
-            <div key={it.name} className="flex justify-between text-sm">
-              <span className="text-slate-600">{it.name} <span className="text-slate-400">x{it.qty}</span></span>
-              <span className="text-slate-800 font-medium">{rupiah(it.price * it.qty)}</span>
-            </div>
-          ))}
-        </div>
-        <div className="border-t border-dashed border-slate-200 pt-2 flex justify-between font-bold text-violet-700">
-          <span>Total</span>
-          <span>{rupiah(invoice.total)}</span>
-        </div>
-        <p className="text-center text-xs text-slate-400 mt-4">Terima kasih telah berbelanja!</p>
-        <p className="text-center text-[10px] text-slate-300 mt-1">spatialPOS © 2026 DestaLabs</p>
 
         <div className="flex items-center gap-2 mt-5">
           <button onClick={() => window.print()} className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-semibold hover:bg-violet-700">
@@ -877,11 +880,25 @@ function BarcodeBars({ code }) {
 function BarcodePage({ products }) {
   const [selected, setSelected] = useState(products[0]?.id || "");
   const [copies, setCopies] = useState(1);
+  // "single" prints just the selected product; "all" prints one label sheet
+  // covering every product in the catalog (each repeated `copies` times).
+  const [mode, setMode] = useState("single");
   const product = products.find((p) => p.id === selected) || products[0];
 
   useEffect(() => {
     if (!products.find((p) => p.id === selected) && products[0]) setSelected(products[0].id);
   }, [products]);
+
+  // The printable area is swapped based on `mode` before printing, so
+  // window.print() always captures exactly the labels the user asked for.
+  const doPrint = (nextMode) => {
+    setMode(nextMode);
+    setTimeout(() => window.print(), 50);
+  };
+
+  const labels = mode === "all"
+    ? products.flatMap((p) => Array.from({ length: copies }).map((_, i) => ({ key: `${p.id}-${i}`, item: p })))
+    : product ? Array.from({ length: copies }).map((_, i) => ({ key: `${product.id}-${i}`, item: product })) : [];
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -898,12 +915,17 @@ function BarcodePage({ products }) {
           </div>
         )}
         <div className="mt-4">
-          <label className="text-xs font-medium text-slate-600 mb-1 block">Jumlah Label Cetak</label>
+          <label className="text-xs font-medium text-slate-600 mb-1 block">Jumlah Label per Produk</label>
           <input type="number" min="1" max="24" value={copies} onChange={(e) => setCopies(Math.max(1, Math.min(24, Number(e.target.value) || 1)))} className="w-24 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-violet-400" />
         </div>
-        <button onClick={() => window.print()} disabled={!product} className="mt-4 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-semibold hover:bg-violet-700 disabled:opacity-40">
-          <Printer className="w-4 h-4" /> Cetak Barcode
-        </button>
+        <div className="flex flex-wrap gap-2 mt-4">
+          <button onClick={() => doPrint("single")} disabled={!product} className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-semibold hover:bg-violet-700 disabled:opacity-40">
+            <Printer className="w-4 h-4" /> Cetak Produk Ini
+          </button>
+          <button onClick={() => doPrint("all")} disabled={products.length === 0} className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-violet-200 bg-violet-50 text-violet-700 text-sm font-semibold hover:bg-violet-100 disabled:opacity-40">
+            <Printer className="w-4 h-4" /> Cetak Semua Produk ({products.length})
+          </button>
+        </div>
       </div>
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 flex flex-col items-center justify-center">
         {product ? (
@@ -915,16 +937,20 @@ function BarcodePage({ products }) {
         ) : <p className="text-sm text-slate-400">Tambahkan produk terlebih dahulu.</p>}
       </div>
 
-      {product && copies > 1 && (
-        <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
-          <p className="text-xs text-slate-500 mb-3">Pratinjau {copies} label</p>
+      {labels.length > 0 && (
+        <div id="barcode-print" className="lg:col-span-2 bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+          <p className="text-xs text-slate-500 mb-3">
+            {mode === "all"
+              ? `Pratinjau cetak semua produk — ${products.length} produk × ${copies} label`
+              : `Pratinjau ${copies} label — ${product?.name}`}
+          </p>
           <div className="flex flex-wrap gap-3">
-            {Array.from({ length: copies }).map((_, i) => (
-              <div key={i} className="border border-slate-200 rounded-lg p-3 flex flex-col items-center w-40">
-                <p className="text-[11px] font-semibold text-slate-700 mb-1 truncate w-full text-center">{product.name}</p>
-                <BarcodeBars code={product.barcode} />
-                <p className="text-[10px] font-mono tracking-widest text-slate-700 mt-2">{product.barcode}</p>
-                <p className="text-[10px] text-violet-600 font-bold mt-0.5">{rupiah(product.price)}</p>
+            {labels.map(({ key, item }) => (
+              <div key={key} className="border border-slate-200 rounded-lg p-3 flex flex-col items-center w-40">
+                <p className="text-[11px] font-semibold text-slate-700 mb-1 truncate w-full text-center">{item.name}</p>
+                <BarcodeBars code={item.barcode} />
+                <p className="text-[10px] font-mono tracking-widest text-slate-700 mt-2">{item.barcode}</p>
+                <p className="text-[10px] text-violet-600 font-bold mt-0.5">{rupiah(item.price)}</p>
               </div>
             ))}
           </div>
@@ -1102,7 +1128,7 @@ function PengaturanPage({ settings, setSettings, notify, products, setProducts, 
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `spatialpos-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `jawara-backup-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
     notify("Data berhasil diekspor");
@@ -1133,7 +1159,7 @@ function PengaturanPage({ settings, setSettings, notify, products, setProducts, 
 
   const resetAllData = () => {
     if (!window.confirm("Reset semua data (produk, transaksi, pelanggan, supplier, pengaturan) ke kondisi awal? Tindakan ini tidak bisa dibatalkan.")) return;
-    ["spatialpos_products", "spatialpos_transactions", "spatialpos_customers", "spatialpos_suppliers", "spatialpos_settings"].forEach((k) => window.localStorage.removeItem(k));
+    ["jawara_products", "jawara_transactions", "jawara_customers", "jawara_suppliers", "jawara_settings"].forEach((k) => window.localStorage.removeItem(k));
     window.location.reload();
   };
 
@@ -1227,10 +1253,10 @@ function DashboardPage({ onLogout, settings, setSettings }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   // Persisted to localStorage so data survives refreshes and logout/login,
   // since this is a static, backend-less app.
-  const [products, setProducts] = useLocalStorageState("spatialpos_products", initialProducts);
-  const [transactions, setTransactions] = useLocalStorageState("spatialpos_transactions", initialTransactions);
-  const [customers, setCustomers] = useLocalStorageState("spatialpos_customers", initialCustomers);
-  const [suppliers, setSuppliers] = useLocalStorageState("spatialpos_suppliers", initialSuppliers);
+  const [products, setProducts] = useLocalStorageState("jawara_products", initialProducts);
+  const [transactions, setTransactions] = useLocalStorageState("jawara_transactions", initialTransactions);
+  const [customers, setCustomers] = useLocalStorageState("jawara_customers", initialCustomers);
+  const [suppliers, setSuppliers] = useLocalStorageState("jawara_suppliers", initialSuppliers);
   const [toast, setToast] = useState("");
 
   const notify = (msg) => { setToast(msg); setTimeout(() => setToast(""), 2800); };
@@ -1314,7 +1340,7 @@ function DashboardPage({ onLogout, settings, setSettings }) {
 // ---------------- App root ----------------
 export default function App() {
   const [page, setPage] = useState("landing"); // landing | login | dashboard
-  const [settings, setSettings] = useLocalStorageState("spatialpos_settings", defaultSettings);
+  const [settings, setSettings] = useLocalStorageState("jawara_settings", defaultSettings);
 
   if (page === "login") return <LoginPage onLogin={() => setPage("dashboard")} onBack={() => setPage("landing")} settings={settings} />;
   if (page === "dashboard") return <DashboardPage onLogout={() => setPage("login")} settings={settings} setSettings={setSettings} />;
