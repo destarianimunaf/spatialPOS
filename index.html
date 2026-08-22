@@ -96,7 +96,7 @@ import ReactDOM from "react-dom/client";
 import {
   LayoutDashboard, ShoppingCart, Package, Boxes, Barcode as BarcodeIcon, Users, Truck,
   FileText, Settings, Search, ArrowUp, ArrowDown, User,
-  Menu, X, Play, ArrowRight, ShieldCheck, Sparkles, Headphones,
+  Menu, X, Play, ArrowRight, ArrowLeft, ShieldCheck, Sparkles, Headphones,
   Coffee, Wheat, Milk, Tag, PieChart as PieIcon, UserCog,
   Plus, Minus, Trash2, CreditCard, CheckCircle2, LogIn, Lock, Mail,
   Box, Droplet, LogOut, Phone, ScanLine, Printer, Upload, RotateCcw,
@@ -234,6 +234,18 @@ const features = [
 ];
 
 const rupiah = (n) => "Rp " + n.toLocaleString("id-ID");
+
+// Comparison used on the landing page's "Kenapa JAWARA" section. Framed
+// against "aplikasi kasir lain pada umumnya" (typical POS software patterns
+// in the market) rather than any single named competitor.
+const comparisonRows = [
+  { label: "Instalasi & Setup", jawara: "Langsung jalan di browser, tanpa instal", other: "Perlu instal aplikasi atau perangkat POS khusus" },
+  { label: "Biaya per Kasir", jawara: "Tanpa biaya tambahan per akun staf", other: "Sering dikenakan biaya per user/kasir" },
+  { label: "Barcode Generator", jawara: "Bawaan, dibuat otomatis untuk tiap produk", other: "Butuh add-on atau layanan pihak ketiga" },
+  { label: "Cetak Label Barcode", jawara: "Cetak label satu produk atau semua produk sekaligus", other: "Umumnya cetak satu per satu" },
+  { label: "Kontrol Akses Staf", jawara: "3 level bawaan — Kasir, Admin, Super Admin", other: "Sering hanya 1 level akses di paket dasar" },
+  { label: "Kepemilikan Data", jawara: "Ekspor & impor data (JSON) kapan saja", other: "Data sering terkunci di sistem vendor" },
+];
 
 const defaultSettings = {
   storeName: "Toko Sumber Rejeki",
@@ -388,7 +400,9 @@ function LoginPage({ onLogin, onBack, settings }) {
       <div className="absolute -bottom-24 -right-24 w-80 h-80 rounded-full bg-[#F0A202]/15 blur-3xl" />
 
       <div className="w-full max-w-md bg-nota-paper rounded-3xl shadow-2xl p-8 relative border border-white/10">
-        <button onClick={onBack} className="font-mono-nota text-xs font-medium text-stone-400 hover:text-stone-600 mb-4">← Kembali ke beranda</button>
+        <button onClick={onBack} className="inline-flex items-center gap-1.5 font-mono-nota text-xs font-semibold text-stone-600 hover:text-stone-900 hover:bg-stone-900/5 border border-stone-900/15 rounded-full px-3 py-1.5 mb-6 transition-colors">
+          <ArrowLeft className="w-3.5 h-3.5" /> Kembali ke Beranda
+        </button>
         <div className="mb-6"><Logo logoUrl={settings.logoUrl} /></div>
         <h1 className="font-display text-2xl uppercase text-stone-900 mb-1">Masuk ke Akun Anda</h1>
         <p className="text-sm text-stone-500 mb-5">Pilih peran demo, lalu masuk untuk melihat akses masing-masing.</p>
@@ -453,6 +467,7 @@ function LandingPage({ onLogin, settings }) {
           <nav className="hidden md:flex items-center gap-8 text-sm font-semibold text-stone-600">
             <a className="text-[#D5451B]" href="#beranda">Beranda</a>
             <a className="hover:text-stone-900" href="#fitur">Fitur</a>
+            <a className="hover:text-stone-900" href="#keunggulan">Keunggulan</a>
             <a className="hover:text-stone-900" href="#kontak">Kontak</a>
           </nav>
           <div className="hidden sm:flex items-center gap-2">
@@ -463,7 +478,7 @@ function LandingPage({ onLogin, settings }) {
         </div>
         {menuOpen && (
           <div className="sm:hidden px-5 pb-4 flex flex-col gap-3 text-sm font-semibold text-stone-600">
-            <a href="#fitur">Fitur</a><a href="#kontak">Kontak</a>
+            <a href="#fitur">Fitur</a><a href="#keunggulan">Keunggulan</a><a href="#kontak">Kontak</a>
             <button onClick={onLogin} className="mt-2 px-4 py-2 text-sm font-bold text-stone-900 bg-[#F0A202] rounded-lg">Coba Gratis</button>
           </div>
         )}
@@ -528,6 +543,38 @@ function LandingPage({ onLogin, settings }) {
               </button>
             ))}
           </div>
+        </div>
+      </section>
+
+      <section id="keunggulan" className="bg-nota-paper py-20">
+        <div className="max-w-5xl mx-auto px-5 sm:px-8">
+          <div className="max-w-xl mb-10">
+            <p className="font-mono-nota text-xs text-[#D5451B] mb-3">// KENAPA JAWARA</p>
+            <h2 className="font-display text-3xl sm:text-4xl text-stone-900 uppercase leading-tight">Beda JAWARA dengan Kasir Lain</h2>
+            <p className="mt-3 text-stone-600 text-sm sm:text-base leading-relaxed">Dibanding aplikasi kasir pada umumnya di pasaran, ini yang membuat toko Anda lebih diuntungkan pakai JAWARA.</p>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-stone-900/10 shadow-sm overflow-hidden">
+            <div className="grid grid-cols-[1.1fr_1fr_1fr] font-mono-nota text-[11px] sm:text-xs font-semibold uppercase tracking-wide bg-stone-900 text-white">
+              <div className="px-4 sm:px-5 py-3">Aspek</div>
+              <div className="px-4 sm:px-5 py-3 text-[#F0A202]">JAWARA</div>
+              <div className="px-4 sm:px-5 py-3 text-white/50">Kasir Lain (Umum)</div>
+            </div>
+            {comparisonRows.map((row, i) => (
+              <div key={row.label} className={`grid grid-cols-[1.1fr_1fr_1fr] ${i !== comparisonRows.length - 1 ? "dotted-divider" : ""}`}>
+                <div className="px-4 sm:px-5 py-4 text-sm font-semibold text-stone-800 flex items-center">{row.label}</div>
+                <div className="px-4 sm:px-5 py-4 flex items-start gap-1.5 bg-[#D5451B]/[0.04]">
+                  <CheckCircle2 className="w-4 h-4 text-[#D5451B] shrink-0 mt-0.5" />
+                  <span className="text-xs sm:text-sm text-stone-700 leading-snug">{row.jawara}</span>
+                </div>
+                <div className="px-4 sm:px-5 py-4 flex items-start gap-1.5">
+                  <X className="w-4 h-4 text-stone-300 shrink-0 mt-0.5" />
+                  <span className="text-xs sm:text-sm text-stone-400 leading-snug">{row.other}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="font-mono-nota text-[11px] text-stone-400 mt-4">* Perbandingan bersifat umum terhadap pola aplikasi kasir konvensional di pasaran, bukan merujuk pada produk tertentu.</p>
         </div>
       </section>
 
@@ -1565,8 +1612,8 @@ function DashboardPage({ onLogout, settings, setSettings, role }) {
           ))}
         </nav>
         <div className="p-3 border-t border-slate-100 flex flex-col gap-2">
-          <button onClick={onLogout} className="w-full inline-flex items-center gap-2 text-xs font-medium text-slate-400 hover:text-rose-500 px-3 py-2">
-            <LogOut className="w-3.5 h-3.5" /> Keluar
+          <button onClick={onLogout} className="w-full inline-flex items-center justify-center gap-2 text-sm font-semibold text-rose-600 border border-rose-200 bg-rose-50 hover:bg-rose-100 rounded-lg px-3 py-2.5">
+            <LogOut className="w-4 h-4" /> Keluar
           </button>
           <CopyrightFooter className="text-center text-[10px] text-slate-300 px-3" />
         </div>
@@ -1582,7 +1629,7 @@ function DashboardPage({ onLogout, settings, setSettings, role }) {
               <Search className="w-4 h-4" /> Cari menu...
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-full bg-violet-100 flex items-center justify-center">
               {roleInfo.key === "superadmin" ? <Crown className="w-4 h-4 text-violet-600" /> : <User className="w-4 h-4 text-violet-600" />}
             </div>
@@ -1590,6 +1637,9 @@ function DashboardPage({ onLogout, settings, setSettings, role }) {
               <p className="text-xs text-slate-400 leading-none">{roleInfo.label}</p>
               <p className="font-semibold text-slate-800 leading-tight">{roleInfo.name}</p>
             </div>
+            <button onClick={onLogout} title="Keluar" className="inline-flex items-center gap-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-lg px-2.5 py-2">
+              <LogOut className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Keluar</span>
+            </button>
           </div>
         </header>
 
