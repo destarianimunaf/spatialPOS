@@ -263,6 +263,62 @@ function playCashSound() {
   }
 }
 
+// Bright single-note "tring!" bell — played when a customer browsing in Mode
+// Pelanggan hands their order back to the cashier. Synthesized (no audio
+// file needed) with a fundamental tone plus a quiet octave-up overtone so it
+// reads as a crisp service-bell "ding" rather than a flat beep.
+function playTringSound() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const now = ctx.currentTime;
+    [[2100, 0.28, 0.55], [4200, 0.10, 0.35]].forEach(([freq, peak, dur]) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "triangle";
+      osc.frequency.value = freq;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(peak, now + 0.008);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+      osc.start(now);
+      osc.stop(now + dur);
+    });
+    setTimeout(() => ctx.close(), 900);
+  } catch (err) {
+    console.warn("Gagal memutar suara notifikasi:", err);
+  }
+}
+
+// Reads an <input type="file"> image, downsizes it on a canvas, and resolves
+// a JPEG data URL. Keeps product photos light — fast to render in the UI and
+// cheap to keep in localStorage — instead of storing the original file as-is.
+function fileToResizedDataURL(file, maxDim = 480, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error || new Error("Gagal membaca file"));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("Gagal memuat gambar"));
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > height && width > maxDim) { height = Math.round((height * maxDim) / width); width = maxDim; }
+        else if (height >= width && height > maxDim) { width = Math.round((width * maxDim) / height); height = maxDim; }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx2d = canvas.getContext("2d");
+        ctx2d.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 // Comparison used on the landing page's "Kenapa JAWARA" section. Framed
 // against "aplikasi kasir lain pada umumnya" (typical POS software patterns
 // in the market) rather than any single named competitor.
@@ -905,7 +961,16 @@ function PenjualanPage({ products, setProducts, transactions, setTransactions, n
                 disabled={p.stock === 0}
                 className={`text-left bg-white border border-slate-100 rounded-2xl shadow-sm hover:shadow-md hover:border-violet-200 transition-all disabled:opacity-40 disabled:cursor-not-allowed ${customerMode ? "p-5" : "p-3.5"}`}
               >
-                <div className={`rounded-lg flex items-center justify-center mb-2.5 ${p.color} ${customerMode ? "w-14 h-14" : "w-9 h-9"}`}><Icon className={customerMode ? "w-7 h-7" : "w-4 h-4"} /></div>
+                {/* Product photos only render in Mode Pelanggan (the
+                    customer-facing browse screen) — the cashier's own grid
+                    stays icon-only so it loads and scans fast. */}
+                {customerMode && p.image ? (
+                  <div className="rounded-lg overflow-hidden mb-2.5 w-14 h-14 bg-slate-100">
+                    <img src={p.image} alt={p.name} loading="lazy" className="w-full h-full object-cover" />
+                  </div>
+                ) : (
+                  <div className={`rounded-lg flex items-center justify-center mb-2.5 ${p.color} ${customerMode ? "w-14 h-14" : "w-9 h-9"}`}><Icon className={customerMode ? "w-7 h-7" : "w-4 h-4"} /></div>
+                )}
                 <p className={`font-semibold text-slate-800 ${customerMode ? "text-base" : "text-sm"}`}>{p.name}</p>
                 {!customerMode && <p className="text-xs text-slate-400 mb-1">Stok: {p.stock}</p>}
                 <p className={`font-bold text-violet-600 mb-1 ${customerMode ? "text-lg" : "text-sm"}`}>{rupiah(p.price)}</p>
@@ -950,7 +1015,7 @@ function PenjualanPage({ products, setProducts, transactions, setTransactions, n
           <p className="text-lg font-bold text-violet-600">{rupiah(total)}</p>
         </div>
         {customerMode ? (
-          <button onClick={() => setCustomerMode(false)} disabled={cartItems.length === 0} className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-violet-600 text-white font-semibold text-sm hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed">
+          <button onClick={() => { playTringSound(); setCustomerMode(false); }} disabled={cartItems.length === 0} className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-violet-600 text-white font-semibold text-sm hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed">
             <ArrowRight className="w-4 h-4" /> Serahkan ke Kasir
           </button>
         ) : (
@@ -966,32 +1031,51 @@ function PenjualanPage({ products, setProducts, transactions, setTransactions, n
 }
 
 function ProdukPage({ products, setProducts, notify }) {
-  const [form, setForm] = useState({ name: "", price: "", stock: "" });
+  const [form, setForm] = useState({ name: "", price: "", stock: "", image: "" });
   const [editingId, setEditingId] = useState(null);
+  const imageRef = useRef(null);
 
   const startEdit = (p) => {
     setEditingId(p.id);
-    setForm({ name: p.name, price: String(p.price), stock: String(p.stock) });
+    setForm({ name: p.name, price: String(p.price), stock: String(p.stock), image: p.image || "" });
   };
   const cancelEdit = () => {
     setEditingId(null);
-    setForm({ name: "", price: "", stock: "" });
+    setForm({ name: "", price: "", stock: "", image: "" });
   };
+
+  const pickImage = () => imageRef.current?.click();
+
+  const onImageChange = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { notify("File harus berupa gambar"); return; }
+    if (file.size > 5 * 1024 * 1024) { notify("Ukuran gambar maksimal 5MB"); return; }
+    try {
+      const dataUrl = await fileToResizedDataURL(file);
+      setForm((f) => ({ ...f, image: dataUrl }));
+    } catch (err) {
+      notify("Gagal memproses gambar");
+    }
+  };
+
+  const removeImage = () => setForm((f) => ({ ...f, image: "" }));
 
   const submitProduct = (e) => {
     e.preventDefault();
     if (!form.name || !form.price || !form.stock) return;
     if (editingId) {
       setProducts((ps) => ps.map((p) => (p.id === editingId
-        ? { ...p, name: form.name, price: Number(form.price), stock: Number(form.stock) }
+        ? { ...p, name: form.name, price: Number(form.price), stock: Number(form.stock), image: form.image }
         : p)));
       notify("Produk diperbarui");
       cancelEdit();
     } else {
       const id = "P" + (products.length + 1) + "-" + Date.now().toString().slice(-4);
       const barcode = genBarcode(id);
-      setProducts((ps) => [...ps, { id, name: form.name, price: Number(form.price), stock: Number(form.stock), iconName: "Box", color: "bg-violet-100 text-violet-700", barcode }]);
-      setForm({ name: "", price: "", stock: "" });
+      setProducts((ps) => [...ps, { id, name: form.name, price: Number(form.price), stock: Number(form.stock), iconName: "Box", color: "bg-violet-100 text-violet-700", barcode, image: form.image }]);
+      setForm({ name: "", price: "", stock: "", image: "" });
       notify(`Produk ditambahkan — barcode ${barcode} dibuat otomatis`);
     }
   };
@@ -1016,7 +1100,11 @@ function ProdukPage({ products, setProducts, notify }) {
               return (
                 <tr key={p.id} className={editingId === p.id ? "bg-violet-50/40" : undefined}>
                   <td className="px-4 py-3 flex items-center gap-2.5">
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${p.color}`}><Icon className="w-4 h-4" /></div>
+                    {p.image ? (
+                      <img src={p.image} alt={p.name} className="w-8 h-8 rounded-lg object-cover" />
+                    ) : (
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${p.color}`}><Icon className="w-4 h-4" /></div>
+                    )}
                     <span className="font-medium text-slate-700">{p.name}</span>
                   </td>
                   <td className="px-4 py-3 font-mono text-xs text-slate-500">{p.barcode}</td>
@@ -1039,6 +1127,28 @@ function ProdukPage({ products, setProducts, notify }) {
       <form onSubmit={submitProduct} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 h-fit">
         <p className="font-semibold text-slate-800 text-sm mb-3">{editingId ? "✎ Edit Produk" : "+ Tambah Produk"}</p>
         <div className="flex flex-col gap-3">
+          <div>
+            <label className="text-xs font-medium text-slate-600 mb-1 block">Foto Produk (opsional)</label>
+            <div className="flex items-center gap-3">
+              {form.image ? (
+                <img src={form.image} alt="Pratinjau produk" className="w-12 h-12 rounded-lg object-cover border border-slate-200" />
+              ) : (
+                <div className="w-12 h-12 rounded-lg bg-slate-100 flex items-center justify-center text-slate-300"><Boxes className="w-5 h-5" /></div>
+              )}
+              <div className="flex flex-col gap-1">
+                <button type="button" onClick={pickImage} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                  <Upload className="w-3.5 h-3.5" /> {form.image ? "Ganti Foto" : "Unggah Foto"}
+                </button>
+                {form.image && (
+                  <button type="button" onClick={removeImage} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-rose-500 hover:bg-rose-50">
+                    <RotateCcw className="w-3.5 h-3.5" /> Hapus Foto
+                  </button>
+                )}
+              </div>
+              <input ref={imageRef} type="file" accept="image/*" onChange={onImageChange} className="hidden" />
+            </div>
+            <p className="text-[11px] text-slate-400 mt-1">Tampil di Mode Pelanggan. Layar kasir tetap pakai ikon saja biar ringan.</p>
+          </div>
           <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Nama produk" className="border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-violet-400" />
           <input value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} type="number" placeholder="Harga (Rp)" className="border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-violet-400" />
           <input value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })} type="number" placeholder="Stok" className="border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-violet-400" />
