@@ -101,6 +101,7 @@ import {
   Plus, Minus, Trash2, CreditCard, CheckCircle2, LogIn, Lock, Mail,
   Box, Droplet, LogOut, Phone, ScanLine, Printer, Upload, RotateCcw,
   Pencil, Download, Crown, Store, Ban,
+  Wallet, QrCode, Landmark, Loader2, ShieldAlert, KeyRound, Eye, EyeOff,
 } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -159,11 +160,40 @@ const initialSuppliers = [
 
 // Paid store accounts on the JAWARA platform — visible only to Super Admin,
 // separate from a single toko's own customers/suppliers.
+// Each account now carries real login credentials: `email`/`password` for
+// the toko's Admin (owner), and a separate `kasirEmail`/`kasirPassword` for
+// staff logging in as Kasir under that same store. LoginPage checks these
+// for real — no email/password combo works unless it matches an account
+// whose subscription is Aktif or on Trial (and not expired).
 const initialAccounts = [
-  { id: "A1", storeName: "Toko Sumber Rejeki", owner: "Desta Riani", plan: "Pro", status: "Aktif", expiresAt: "2026-12-31" },
-  { id: "A2", storeName: "Warung Bu Sari", owner: "Sari Wulandari", plan: "Basic", status: "Aktif", expiresAt: "2026-10-15" },
-  { id: "A3", storeName: "Kios Jaya Makmur", owner: "Jaya Kusuma", plan: "Premium", status: "Trial", expiresAt: "2026-09-01" },
-  { id: "A4", storeName: "Toko Anugrah", owner: "Anton Wijaya", plan: "Basic", status: "Nonaktif", expiresAt: "2026-06-30" },
+  { id: "A1", storeName: "Toko Sumber Rejeki", owner: "Desta Riani", plan: "Pro", status: "Aktif", expiresAt: "2026-12-31",
+    email: "admin@jawara.id", password: "demo123", kasirEmail: "kasir@jawara.id", kasirPassword: "demo123" },
+  { id: "A2", storeName: "Warung Bu Sari", owner: "Sari Wulandari", plan: "Basic", status: "Aktif", expiresAt: "2026-10-15",
+    email: "sari@jawara.id", password: "sari123", kasirEmail: "kasir@warungbusari.id", kasirPassword: "kasir123" },
+  { id: "A3", storeName: "Kios Jaya Makmur", owner: "Jaya Kusuma", plan: "Premium", status: "Trial", expiresAt: "2026-09-30",
+    email: "jaya@jawara.id", password: "jaya123", kasirEmail: "kasir@kiosjayamakmur.id", kasirPassword: "kasir123" },
+  { id: "A4", storeName: "Toko Anugrah", owner: "Anton Wijaya", plan: "Basic", status: "Nonaktif", expiresAt: "2026-06-30",
+    email: "anton@jawara.id", password: "anton123", kasirEmail: "kasir@tokoanugrah.id", kasirPassword: "kasir123" },
+];
+
+// Platform owner login — manages which stores have a paid JAWARA
+// subscription, so (unlike Admin/Kasir) this isn't gated by any store's
+// subscription status.
+const SUPERADMIN_CREDENTIAL = { email: "superadmin@jawara.id", password: "demo123" };
+
+// Card-payment style methods offered both at the POS counter (Penjualan)
+// and when a store pays for its JAWARA subscription (Daftar/Berlangganan).
+const PAYMENT_METHODS = [
+  { key: "tunai", label: "Tunai", icon: Wallet },
+  { key: "qris", label: "QRIS", icon: QrCode },
+  { key: "debit", label: "Kartu Debit", icon: CreditCard },
+  { key: "kredit", label: "Kartu Kredit", icon: CreditCard },
+  { key: "transfer", label: "Transfer Bank", icon: Landmark },
+];
+const SUBSCRIPTION_PLANS = [
+  { key: "Basic", price: 99000 },
+  { key: "Pro", price: 199000 },
+  { key: "Premium", price: 349000 },
 ];
 
 // Three access levels for staff logging into a store's JAWARA account.
@@ -372,6 +402,38 @@ function useLocalStorageState(key, initialValue) {
   return [state, setState];
 }
 
+// Accounts (store subscriptions + login credentials) need to be readable
+// from LoginPage/RegisterPage, which render before DashboardPage (and its
+// useLocalStorageState copy of "jawara_accounts") ever mounts. These talk to
+// the same localStorage key directly so a freshly registered account can log
+// in immediately.
+const ACCOUNTS_KEY = "jawara_accounts";
+function readAccounts() {
+  try {
+    const raw = window.localStorage.getItem(ACCOUNTS_KEY);
+    return raw !== null ? JSON.parse(raw) : initialAccounts;
+  } catch (err) {
+    console.warn("Gagal membaca akun:", err);
+    return initialAccounts;
+  }
+}
+function writeAccounts(accounts) {
+  try {
+    window.localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
+  } catch (err) {
+    console.warn("Gagal menyimpan akun:", err);
+  }
+}
+function todayStr() { return new Date().toISOString().slice(0, 10); }
+// An account can actually log in if it's Aktif or still on Trial, and its
+// subscription hasn't passed its expiry date.
+function isAccountUsable(acc) {
+  if (!acc) return false;
+  if (acc.status === "Nonaktif") return false;
+  if (acc.expiresAt && acc.expiresAt < todayStr()) return false;
+  return true;
+}
+
 // ---------------- Shared bits ----------------
 function Logo({ logoUrl }) {
   return (
@@ -519,10 +581,11 @@ function MenuPage({ onBack }) {
   );
 }
 
-function LoginPage({ onLogin, onBack, settings }) {
+function LoginPage({ onLogin, onBack, onGoRegister, settings, prefillEmail }) {
   const [selectedRole, setSelectedRole] = useState("admin");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(prefillEmail || "");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
 
   const pickRole = (roleKey) => {
@@ -530,19 +593,66 @@ function LoginPage({ onLogin, onBack, settings }) {
     setError("");
   };
 
+  // Fills in a working demo login for the currently-selected role — the
+  // Pro-plan, Aktif "Toko Sumber Rejeki" account — so reviewers can try the
+  // real auth flow without having to register first.
   const fillDemo = () => {
-    setEmail(ROLES[selectedRole].email);
-    setPassword("demo123");
+    if (selectedRole === "superadmin") {
+      setEmail(SUPERADMIN_CREDENTIAL.email);
+      setPassword(SUPERADMIN_CREDENTIAL.password);
+    } else {
+      const demoAccount = readAccounts().find((a) => a.id === "A1");
+      setEmail(selectedRole === "kasir" ? demoAccount.kasirEmail : demoAccount.email);
+      setPassword(selectedRole === "kasir" ? demoAccount.kasirPassword : demoAccount.password);
+    }
     setError("");
   };
 
   const submit = (e) => {
     e.preventDefault();
-    if (!email || !password) {
-      setError("Isi email dan kata sandi terlebih dahulu, atau gunakan Isi Data Demo.");
+    setError("");
+    const typedEmail = email.trim().toLowerCase();
+    if (!typedEmail || !password) {
+      setError("Isi email dan kata sandi terlebih dahulu.");
       return;
     }
-    onLogin(selectedRole);
+
+    // Super Admin runs the JAWARA platform itself, so it isn't gated by any
+    // store's subscription — it's checked against a fixed platform login.
+    if (selectedRole === "superadmin") {
+      if (typedEmail === SUPERADMIN_CREDENTIAL.email && password === SUPERADMIN_CREDENTIAL.password) {
+        onLogin("superadmin", null);
+      } else {
+        setError("Email atau kata sandi Super Admin salah.");
+      }
+      return;
+    }
+
+    // Admin/Kasir must match a real store account, and that account's
+    // JAWARA subscription must actually be paid for (Aktif) or on Trial.
+    const accounts = readAccounts();
+    const acc = accounts.find((a) => {
+      const accEmail = selectedRole === "kasir" ? a.kasirEmail : a.email;
+      return (accEmail || "").toLowerCase() === typedEmail;
+    });
+    if (!acc) {
+      setError("Akun tidak ditemukan. Toko Anda belum berlangganan JAWARA — silakan daftar dulu.");
+      return;
+    }
+    const accPassword = selectedRole === "kasir" ? acc.kasirPassword : acc.password;
+    if (accPassword !== password) {
+      setError("Kata sandi salah.");
+      return;
+    }
+    if (acc.status === "Nonaktif") {
+      setError(`Langganan JAWARA untuk "${acc.storeName}" nonaktif. Hubungi Super Admin untuk mengaktifkan kembali.`);
+      return;
+    }
+    if (acc.expiresAt && acc.expiresAt < todayStr()) {
+      setError(`Langganan JAWARA untuk "${acc.storeName}" berakhir pada ${acc.expiresAt}. Perpanjang paket untuk bisa masuk lagi.`);
+      return;
+    }
+    onLogin(selectedRole, acc);
   };
 
   return (
@@ -556,7 +666,7 @@ function LoginPage({ onLogin, onBack, settings }) {
         </button>
         <div className="mb-6"><Logo logoUrl={settings.logoUrl} /></div>
         <h1 className="font-display text-2xl uppercase text-stone-900 mb-1">Masuk ke Akun Anda</h1>
-        <p className="text-sm text-stone-500 mb-5">Pilih peran demo, lalu masuk untuk melihat akses masing-masing.</p>
+        <p className="text-sm text-stone-500 mb-5">Khusus toko yang sudah berlangganan JAWARA. Pilih peran, lalu masuk dengan email &amp; kata sandi akun Anda.</p>
 
         <div className="grid grid-cols-3 gap-2 mb-5">
           {Object.values(ROLES).map((r) => (
@@ -578,7 +688,7 @@ function LoginPage({ onLogin, onBack, settings }) {
         <p className="font-mono-nota text-[11px] text-stone-500 bg-white border border-stone-900/10 rounded-lg px-3 py-2 mb-5">{ROLES[selectedRole].desc}</p>
 
         <button onClick={fillDemo} className="w-full mb-5 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-[#F0A202]/40 bg-[#F0A202]/10 text-[#8a5c02] text-sm font-semibold hover:bg-[#F0A202]/20">
-          <Sparkles className="w-4 h-4" /> Isi Data Demo — {ROLES[selectedRole].label}
+          <Sparkles className="w-4 h-4" /> Isi Data Demo (Akun Aktif) — {ROLES[selectedRole].label}
         </button>
 
         <form onSubmit={submit} className="flex flex-col gap-3">
@@ -593,22 +703,199 @@ function LoginPage({ onLogin, onBack, settings }) {
             <label className="text-xs font-medium text-stone-600 mb-1 block">Kata Sandi</label>
             <div className="flex items-center gap-2 border border-stone-900/15 bg-white rounded-xl px-3 py-2.5 focus-within:border-[#D5451B]">
               <Lock className="w-4 h-4 text-stone-400" />
-              <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder="••••••••" className="flex-1 text-sm outline-none" />
+              <input value={password} onChange={(e) => setPassword(e.target.value)} type={showPassword ? "text" : "password"} placeholder="••••••••" className="flex-1 text-sm outline-none" />
+              <button type="button" onClick={() => setShowPassword((v) => !v)} className="text-stone-400 hover:text-stone-600">
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
             </div>
           </div>
-          {error && <p className="text-xs text-rose-600">{error}</p>}
+          {error && (
+            <p className="flex items-start gap-1.5 text-xs text-rose-600 bg-rose-50 border border-rose-100 rounded-lg px-3 py-2">
+              <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {error}
+            </p>
+          )}
           <button type="submit" className="mt-2 inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-stone-900 text-white font-semibold text-sm hover:bg-stone-800">
             <LogIn className="w-4 h-4" /> Masuk sebagai {ROLES[selectedRole].label}
           </button>
         </form>
-        <p className="text-center font-mono-nota text-[11px] text-stone-400 mt-5">Ini adalah mode demo — data tidak benar-benar tersimpan permanen.</p>
+        <button onClick={onGoRegister} className="w-full text-center font-mono-nota text-[11px] text-stone-500 hover:text-[#D5451B] mt-5">
+          Toko Anda belum berlangganan? <span className="underline font-semibold">Daftar &amp; Berlangganan JAWARA</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------- Register / Berlangganan ----------------
+// Real signup flow: pick a plan, pay for it, and JAWARA creates a working
+// store account (with its own Admin + Kasir login) that LoginPage can
+// authenticate against — this is what makes a person an actual "paid /
+// subscriber" user of the system instead of a demo role.
+function RegisterPage({ onBack, onRegistered, settings }) {
+  const [step, setStep] = useState(1); // 1: data toko, 2: bayar
+  const [form, setForm] = useState({ storeName: "", owner: "", email: "", password: "", confirmPassword: "", plan: "Pro" });
+  const [paymentMethod, setPaymentMethod] = useState("qris");
+  const [error, setError] = useState("");
+  const [paying, setPaying] = useState(false);
+
+  const selectedPlan = SUBSCRIPTION_PLANS.find((p) => p.key === form.plan) || SUBSCRIPTION_PLANS[0];
+
+  const goToPayment = (e) => {
+    e.preventDefault();
+    setError("");
+    if (!form.storeName.trim() || !form.owner.trim() || !form.email.trim() || !form.password) {
+      setError("Lengkapi semua data toko terlebih dahulu.");
+      return;
+    }
+    if (form.password.length < 6) {
+      setError("Kata sandi minimal 6 karakter.");
+      return;
+    }
+    if (form.password !== form.confirmPassword) {
+      setError("Konfirmasi kata sandi tidak cocok.");
+      return;
+    }
+    const accounts = readAccounts();
+    const emailTaken = accounts.some((a) => a.email.toLowerCase() === form.email.trim().toLowerCase());
+    if (emailTaken) {
+      setError("Email ini sudah terdaftar sebagai akun toko JAWARA. Silakan masuk, atau gunakan email lain.");
+      return;
+    }
+    setStep(2);
+  };
+
+  // No real payment gateway here (this is a static, backend-less app) — but
+  // the account is only created and made Aktif *after* this step, mirroring
+  // a real "pay to activate" subscription flow rather than granting access
+  // for free.
+  const pay = () => {
+    setPaying(true);
+    setTimeout(() => {
+      const accounts = readAccounts();
+      const expires = new Date();
+      expires.setDate(expires.getDate() + 30);
+      const newAccount = {
+        id: "A" + Date.now(),
+        storeName: form.storeName.trim(),
+        owner: form.owner.trim(),
+        plan: form.plan,
+        status: "Aktif",
+        expiresAt: expires.toISOString().slice(0, 10),
+        email: form.email.trim().toLowerCase(),
+        password: form.password,
+        kasirEmail: "kasir@" + form.email.trim().toLowerCase().split("@")[1],
+        kasirPassword: form.password,
+      };
+      writeAccounts([...accounts, newAccount]);
+      setPaying(false);
+      onRegistered(newAccount.email);
+    }, 900);
+  };
+
+  return (
+    <div className="min-h-screen bg-ink flex items-center justify-center p-5 relative overflow-hidden">
+      <div className="absolute -top-24 -left-24 w-72 h-72 rounded-full bg-[#D5451B]/20 blur-3xl" />
+      <div className="absolute -bottom-24 -right-24 w-80 h-80 rounded-full bg-[#F0A202]/15 blur-3xl" />
+
+      <div className="w-full max-w-md bg-nota-paper rounded-3xl shadow-2xl p-8 relative border border-white/10">
+        <button onClick={step === 2 ? () => setStep(1) : onBack} className="inline-flex items-center gap-1.5 font-mono-nota text-xs font-semibold text-stone-600 hover:text-stone-900 hover:bg-stone-900/5 border border-stone-900/15 rounded-full px-3 py-1.5 mb-6 transition-colors">
+          <ArrowLeft className="w-3.5 h-3.5" /> {step === 2 ? "Kembali ke Data Toko" : "Kembali ke Beranda"}
+        </button>
+        <div className="mb-6"><Logo logoUrl={settings.logoUrl} /></div>
+
+        {step === 1 ? (
+          <>
+            <h1 className="font-display text-2xl uppercase text-stone-900 mb-1">Daftar &amp; Berlangganan</h1>
+            <p className="text-sm text-stone-500 mb-5">Buat akun toko Anda sendiri — login sungguhan setelah berlangganan aktif.</p>
+
+            <form onSubmit={goToPayment} className="flex flex-col gap-3">
+              <div>
+                <label className="text-xs font-medium text-stone-600 mb-1 block">Nama Toko</label>
+                <input value={form.storeName} onChange={(e) => setForm({ ...form, storeName: e.target.value })} placeholder="Toko Anda" className="w-full border border-stone-900/15 bg-white rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#D5451B]" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-stone-600 mb-1 block">Nama Pemilik</label>
+                <input value={form.owner} onChange={(e) => setForm({ ...form, owner: e.target.value })} placeholder="Nama Anda" className="w-full border border-stone-900/15 bg-white rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#D5451B]" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-stone-600 mb-1 block">Email</label>
+                <div className="flex items-center gap-2 border border-stone-900/15 bg-white rounded-xl px-3 py-2.5 focus-within:border-[#D5451B]">
+                  <Mail className="w-4 h-4 text-stone-400" />
+                  <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} type="email" placeholder="nama@toko.id" className="flex-1 text-sm outline-none" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs font-medium text-stone-600 mb-1 block">Kata Sandi</label>
+                  <div className="flex items-center gap-2 border border-stone-900/15 bg-white rounded-xl px-3 py-2.5 focus-within:border-[#D5451B]">
+                    <Lock className="w-4 h-4 text-stone-400 shrink-0" />
+                    <input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} type="password" placeholder="Min. 6 karakter" className="flex-1 min-w-0 text-sm outline-none" />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-stone-600 mb-1 block">Ulangi Sandi</label>
+                  <div className="flex items-center gap-2 border border-stone-900/15 bg-white rounded-xl px-3 py-2.5 focus-within:border-[#D5451B]">
+                    <KeyRound className="w-4 h-4 text-stone-400 shrink-0" />
+                    <input value={form.confirmPassword} onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })} type="password" placeholder="Ulangi" className="flex-1 min-w-0 text-sm outline-none" />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-stone-600 mb-1.5 block">Pilih Paket</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {SUBSCRIPTION_PLANS.map((p) => (
+                    <button type="button" key={p.key} onClick={() => setForm({ ...form, plan: p.key })} className={`flex flex-col items-center gap-1 rounded-xl border px-2 py-3 text-center transition-colors ${form.plan === p.key ? "border-[#D5451B] bg-[#D5451B]/10" : "border-stone-900/10 bg-white hover:border-stone-900/25"}`}>
+                      <span className="font-mono-nota text-[11px] font-semibold text-stone-800">{p.key}</span>
+                      <span className="text-[10px] text-stone-500">{rupiah(p.price)}/bln</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {error && (
+                <p className="flex items-start gap-1.5 text-xs text-rose-600 bg-rose-50 border border-rose-100 rounded-lg px-3 py-2">
+                  <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {error}
+                </p>
+              )}
+              <button type="submit" className="mt-2 inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-stone-900 text-white font-semibold text-sm hover:bg-stone-800">
+                Lanjut ke Pembayaran <ArrowRight className="w-4 h-4" />
+              </button>
+            </form>
+          </>
+        ) : (
+          <>
+            <h1 className="font-display text-2xl uppercase text-stone-900 mb-1">Pembayaran</h1>
+            <p className="text-sm text-stone-500 mb-5">Paket <strong>{selectedPlan.key}</strong> — aktif 30 hari sejak pembayaran berhasil.</p>
+
+            <div className="flex items-center justify-between bg-white border border-stone-900/10 rounded-xl px-4 py-3 mb-5">
+              <span className="text-sm text-stone-600">Total Tagihan</span>
+              <span className="font-display text-xl text-[#D5451B]">{rupiah(selectedPlan.price)}</span>
+            </div>
+
+            <label className="text-xs font-medium text-stone-600 mb-1.5 block">Metode Pembayaran</label>
+            <div className="grid grid-cols-2 gap-2 mb-6">
+              {PAYMENT_METHODS.filter((m) => m.key !== "tunai").map((m) => (
+                <button type="button" key={m.key} onClick={() => setPaymentMethod(m.key)} className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-left transition-colors ${paymentMethod === m.key ? "border-[#D5451B] bg-[#D5451B]/10" : "border-stone-900/10 bg-white hover:border-stone-900/25"}`}>
+                  <m.icon className="w-4 h-4 text-stone-600 shrink-0" />
+                  <span className="text-xs font-semibold text-stone-800">{m.label}</span>
+                </button>
+              ))}
+            </div>
+
+            <button onClick={pay} disabled={paying} className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-stone-900 text-white font-semibold text-sm hover:bg-stone-800 disabled:opacity-60">
+              {paying ? <><Loader2 className="w-4 h-4 animate-spin" /> Memproses Pembayaran...</> : <><CheckCircle2 className="w-4 h-4" /> Bayar {rupiah(selectedPlan.price)}</>}
+            </button>
+            <p className="text-center font-mono-nota text-[10px] text-stone-400 mt-4">Simulasi pembayaran untuk keperluan demo — akun baru langsung Aktif setelah dikonfirmasi.</p>
+          </>
+        )}
       </div>
     </div>
   );
 }
 
 // ---------------- Landing ----------------
-function LandingPage({ onLogin, onViewMenu, settings }) {
+function LandingPage({ onLogin, onRegister, onViewMenu, settings }) {
   const [menuOpen, setMenuOpen] = useState(false);
   return (
     <div className="min-h-screen bg-nota-paper text-stone-900">
@@ -624,7 +911,7 @@ function LandingPage({ onLogin, onViewMenu, settings }) {
           <div className="hidden sm:flex items-center gap-2">
             <button onClick={onViewMenu} className="px-4 py-2 text-sm font-semibold text-stone-700 hover:bg-stone-900/5 rounded-lg border border-stone-900/15">Lihat Menu</button>
             <button onClick={onLogin} className="px-4 py-2 text-sm font-semibold text-stone-700 hover:bg-stone-900/5 rounded-lg border border-stone-900/15">Masuk</button>
-            <button onClick={onLogin} className="px-4 py-2 text-sm font-bold text-stone-900 bg-[#F0A202] hover:bg-[#d99202] rounded-lg shadow-sm">Coba Gratis</button>
+            <button onClick={onRegister} className="px-4 py-2 text-sm font-bold text-stone-900 bg-[#F0A202] hover:bg-[#d99202] rounded-lg shadow-sm">Coba Gratis</button>
           </div>
           <button className="sm:hidden" onClick={() => setMenuOpen((v) => !v)}>{menuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}</button>
         </div>
@@ -632,7 +919,7 @@ function LandingPage({ onLogin, onViewMenu, settings }) {
           <div className="sm:hidden px-5 pb-4 flex flex-col gap-3 text-sm font-semibold text-stone-600">
             <a href="#fitur">Fitur</a><a href="#keunggulan">Keunggulan</a><a href="#kontak">Kontak</a>
             <button onClick={onViewMenu} className="mt-1 px-4 py-2 text-sm font-semibold text-stone-700 border border-stone-900/15 rounded-lg text-left">Lihat Menu</button>
-            <button onClick={onLogin} className="px-4 py-2 text-sm font-bold text-stone-900 bg-[#F0A202] rounded-lg">Coba Gratis</button>
+            <button onClick={onRegister} className="px-4 py-2 text-sm font-bold text-stone-900 bg-[#F0A202] rounded-lg">Coba Gratis</button>
           </div>
         )}
       </header>
@@ -650,7 +937,7 @@ function LandingPage({ onLogin, onViewMenu, settings }) {
             Satu aplikasi untuk kasir, stok, barcode, dan laporan — jalan langsung di browser, tanpa instal, tanpa ribet.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
-            <button onClick={onLogin} className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-stone-900 text-white font-semibold text-sm hover:bg-stone-800 shadow-lg shadow-stone-900/10">
+            <button onClick={onRegister} className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-stone-900 text-white font-semibold text-sm hover:bg-stone-800 shadow-lg shadow-stone-900/10">
               Coba Gratis Sekarang <ArrowRight className="w-4 h-4" />
             </button>
             <button onClick={onLogin} className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl border border-stone-900/15 text-stone-700 font-semibold text-sm hover:bg-stone-900/5">
@@ -748,7 +1035,7 @@ function LandingPage({ onLogin, onViewMenu, settings }) {
             <div>
               <h3 className="font-display text-3xl uppercase text-stone-900 mb-3 leading-tight">Siap Jadi Jawara?</h3>
               <p className="text-stone-600 text-sm sm:text-base mb-6 max-w-md leading-relaxed">Bergabunglah dengan ribuan pemilik toko yang sudah mengelola bisnisnya lebih rapi bareng JAWARA.</p>
-              <button onClick={onLogin} className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-[#D5451B] text-white font-semibold text-sm hover:bg-[#b83a16] shadow-lg shadow-[#D5451B]/20">
+              <button onClick={onRegister} className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-[#D5451B] text-white font-semibold text-sm hover:bg-[#b83a16] shadow-lg shadow-[#D5451B]/20">
                 Coba Gratis Sekarang <ArrowRight className="w-4 h-4" />
               </button>
             </div>
@@ -928,6 +1215,21 @@ function InvoiceModal({ invoice, settings, onClose }) {
               <span>Total</span>
               <span>{rupiah(invoice.total)}</span>
             </div>
+            {invoice.paymentLabel && (
+              <div className="flex justify-between text-xs text-slate-500 pt-1">
+                <span>Metode Bayar</span><span className="font-medium text-slate-700">{invoice.paymentLabel}</span>
+              </div>
+            )}
+            {invoice.paymentMethod === "tunai" && typeof invoice.cashReceived === "number" && (
+              <>
+                <div className="flex justify-between text-xs text-slate-500">
+                  <span>Uang Diterima</span><span>{rupiah(invoice.cashReceived)}</span>
+                </div>
+                <div className="flex justify-between text-xs text-slate-500">
+                  <span>Kembalian</span><span>{rupiah(Math.max(invoice.changeDue || 0, 0))}</span>
+                </div>
+              </>
+            )}
           </div>
           <p className="text-center text-xs text-slate-400 mt-4">Terima kasih telah berbelanja!</p>
           <p className="text-center text-[10px] text-slate-300 mt-1">JAWARA © 2026 DestaLabs</p>
@@ -1009,6 +1311,10 @@ function PenjualanPage({ products, setProducts, transactions, setTransactions, c
   // customer can browse and add to themselves — no scanner, no checkout
   // button — then hands control back to the cashier to take payment.
   const [customerMode, setCustomerMode] = useState(false);
+  // Mode pembayaran — defaults to Tunai. For Tunai the cashier enters cash
+  // received so change (kembalian) can be computed and shown before printing.
+  const [paymentMethod, setPaymentMethod] = useState("tunai");
+  const [cashReceived, setCashReceived] = useState("");
   const scanRef = useRef(null);
 
   useEffect(() => {
@@ -1073,9 +1379,18 @@ function PenjualanPage({ products, setProducts, transactions, setTransactions, c
 
   const removePromo = () => setAppliedPromo(null);
 
+  const cashReceivedAmount = Number(cashReceived) || 0;
+  const changeDue = cashReceivedAmount - total;
+  const isCashMethod = paymentMethod === "tunai";
+  // Non-cash methods (QRIS/kartu/transfer) are assumed settled exactly, so
+  // there's nothing to collect or short-count — only Tunai needs the cash
+  // received to at least cover the total before checkout is allowed.
+  const canCheckout = cartItems.length > 0 && (!isCashMethod || cashReceivedAmount >= total);
+
   const checkout = () => {
-    if (cart.length === 0) return;
+    if (!canCheckout) return;
     const invNo = String(transactions.length + 1).padStart(3, "0");
+    const methodInfo = PAYMENT_METHODS.find((m) => m.key === paymentMethod) || PAYMENT_METHODS[0];
     // Items are stored on the transaction itself (not just for the printed
     // invoice) so a transaction can later be voided from Laporan with stock
     // correctly restored.
@@ -1096,6 +1411,10 @@ function PenjualanPage({ products, setProducts, transactions, setTransactions, c
       taxPercent,
       taxAmount,
       total,
+      paymentMethod: methodInfo.key,
+      paymentLabel: methodInfo.label,
+      cashReceived: isCashMethod ? cashReceivedAmount : null,
+      changeDue: isCashMethod ? changeDue : null,
     };
     setTransactions((t) => [newTx, ...t]);
     setProducts((ps) => ps.map((p) => {
@@ -1108,8 +1427,10 @@ function PenjualanPage({ products, setProducts, transactions, setTransactions, c
     setCustomerId("");
     setAppliedPromo(null);
     setPromoInput("");
+    setPaymentMethod("tunai");
+    setCashReceived("");
     playCashSound();
-    notify(`Transaksi ${newTx.id} berhasil — ${rupiah(total)}`);
+    notify(`Transaksi ${newTx.id} berhasil — ${methodInfo.label} — ${rupiah(total)}`);
   };
 
   return (
@@ -1223,6 +1544,53 @@ function PenjualanPage({ products, setProducts, transactions, setTransactions, c
           </div>
         )}
 
+        {!customerMode && cartItems.length > 0 && (
+          <div className="flex flex-col gap-2 border-t border-slate-100 pt-3 mb-1">
+            <label className="text-[11px] font-medium text-slate-500 block">Mode Pembayaran</label>
+            <div className="grid grid-cols-3 gap-1.5">
+              {PAYMENT_METHODS.map((m) => (
+                <button
+                  type="button"
+                  key={m.key}
+                  onClick={() => { setPaymentMethod(m.key); if (m.key !== "tunai") setCashReceived(""); }}
+                  className={`flex flex-col items-center gap-1 rounded-lg border px-1.5 py-2 text-center transition-colors ${
+                    paymentMethod === m.key ? "border-violet-500 bg-violet-50 text-violet-700" : "border-slate-200 text-slate-500 hover:border-slate-300"
+                  }`}
+                >
+                  <m.icon className="w-4 h-4" />
+                  <span className="text-[10px] font-semibold leading-tight">{m.label}</span>
+                </button>
+              ))}
+            </div>
+            {isCashMethod && (
+              <div className="flex flex-col gap-1.5 bg-slate-50 border border-slate-100 rounded-lg p-2.5">
+                <label className="text-[11px] font-medium text-slate-500 block">Uang Diterima</label>
+                <input
+                  value={cashReceived}
+                  onChange={(e) => setCashReceived(e.target.value.replace(/[^0-9]/g, ""))}
+                  inputMode="numeric"
+                  placeholder="0"
+                  className="border border-slate-200 rounded-lg px-2.5 py-2 text-sm font-mono outline-none focus:border-violet-400 bg-white"
+                />
+                <div className="flex flex-wrap gap-1.5">
+                  {[total, ...[20000, 50000, 100000].filter((v) => v >= total)].sort((a, b) => a - b).slice(0, 3).map((v) => (
+                    <button type="button" key={v} onClick={() => setCashReceived(String(v))} className="px-2 py-1 rounded-md bg-white border border-slate-200 text-[11px] font-semibold text-slate-600 hover:bg-slate-100">
+                      {rupiah(v)}
+                    </button>
+                  ))}
+                </div>
+                {cashReceived !== "" && (
+                  changeDue >= 0 ? (
+                    <p className="text-xs font-semibold text-emerald-600">Kembalian: {rupiah(changeDue)}</p>
+                  ) : (
+                    <p className="text-xs font-semibold text-rose-500">Kurang: {rupiah(Math.abs(changeDue))}</p>
+                  )
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="border-t border-slate-100 pt-3 flex flex-col gap-1 mb-3">
           {!customerMode && (memberDiscountAmount > 0 || promoDiscountAmount > 0 || taxAmount > 0) && (
             <>
@@ -1256,7 +1624,7 @@ function PenjualanPage({ products, setProducts, transactions, setTransactions, c
             <ArrowRight className="w-4 h-4" /> Serahkan ke Kasir
           </button>
         ) : (
-          <button onClick={checkout} disabled={cartItems.length === 0} className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-amber-400 text-violet-900 font-semibold text-sm hover:bg-amber-300 disabled:opacity-40 disabled:cursor-not-allowed">
+          <button onClick={checkout} disabled={!canCheckout} className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-amber-400 text-violet-900 font-semibold text-sm hover:bg-amber-300 disabled:opacity-40 disabled:cursor-not-allowed">
             <CreditCard className="w-4 h-4" /> Bayar Sekarang
           </button>
         )}
@@ -1669,7 +2037,7 @@ function LaporanPage({ transactions, setTransactions, setProducts, notify }) {
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-slate-500 text-xs">
-            <tr><th className="text-left font-medium px-4 py-3">No. Invoice</th><th className="text-left font-medium px-4 py-3">Waktu</th><th className="text-left font-medium px-4 py-3">Qty</th><th className="text-left font-medium px-4 py-3">Total</th><th className="px-4 py-3"></th></tr>
+            <tr><th className="text-left font-medium px-4 py-3">No. Invoice</th><th className="text-left font-medium px-4 py-3">Waktu</th><th className="text-left font-medium px-4 py-3">Qty</th><th className="text-left font-medium px-4 py-3">Metode</th><th className="text-left font-medium px-4 py-3">Total</th><th className="px-4 py-3"></th></tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
             {transactions.map((t) => (
@@ -1677,6 +2045,13 @@ function LaporanPage({ transactions, setTransactions, setProducts, notify }) {
                 <td className="px-4 py-3 font-medium text-slate-700">{t.id}</td>
                 <td className="px-4 py-3 text-slate-500">{t.time}</td>
                 <td className="px-4 py-3 text-slate-600">{t.qty}</td>
+                <td className="px-4 py-3">
+                  {t.paymentLabel ? (
+                    <span className="inline-flex items-center text-[11px] font-medium px-2 py-1 rounded-full bg-slate-100 text-slate-600">{t.paymentLabel}</span>
+                  ) : (
+                    <span className="text-slate-300 text-xs">—</span>
+                  )}
+                </td>
                 <td className="px-4 py-3 font-semibold text-slate-800">{rupiah(t.total)}</td>
                 <td className="px-4 py-3 text-right">
                   <button onClick={() => voidTransaction(t)} title="Batalkan transaksi" className="text-slate-300 hover:text-rose-500"><Trash2 className="w-4 h-4" /></button>
@@ -1684,7 +2059,7 @@ function LaporanPage({ transactions, setTransactions, setProducts, notify }) {
               </tr>
             ))}
             {transactions.length === 0 && (
-              <tr><td colSpan={5} className="px-4 py-6 text-center text-sm text-slate-400">Belum ada transaksi.</td></tr>
+              <tr><td colSpan={6} className="px-4 py-6 text-center text-sm text-slate-400">Belum ada transaksi.</td></tr>
             )}
           </tbody>
         </table>
@@ -1906,31 +2281,45 @@ function PengaturanPage({ settings, setSettings, notify, products, setProducts, 
 const PLAN_OPTIONS = ["Basic", "Pro", "Premium"];
 
 function AkunPage({ accounts, setAccounts, notify }) {
-  const [form, setForm] = useState({ storeName: "", owner: "", plan: "Basic", expiresAt: "" });
+  const emptyForm = { storeName: "", owner: "", plan: "Basic", expiresAt: "", email: "", password: "" };
+  const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState(null);
 
   const startEdit = (a) => {
     setEditingId(a.id);
-    setForm({ storeName: a.storeName, owner: a.owner, plan: a.plan, expiresAt: a.expiresAt });
+    setForm({ storeName: a.storeName, owner: a.owner, plan: a.plan, expiresAt: a.expiresAt, email: a.email || "", password: a.password || "" });
   };
   const cancelEdit = () => {
     setEditingId(null);
-    setForm({ storeName: "", owner: "", plan: "Basic", expiresAt: "" });
+    setForm(emptyForm);
   };
 
   const submitAccount = (e) => {
     e.preventDefault();
-    if (!form.storeName || !form.owner || !form.expiresAt) return;
+    if (!form.storeName || !form.owner || !form.expiresAt || !form.email || !form.password) {
+      notify("Lengkapi nama toko, pemilik, email, kata sandi, dan tanggal berlaku");
+      return;
+    }
+    const emailTaken = accounts.some((a) => a.id !== editingId && a.email.toLowerCase() === form.email.trim().toLowerCase());
+    if (emailTaken) {
+      notify("Email ini sudah dipakai akun toko lain");
+      return;
+    }
     if (editingId) {
       setAccounts((as) => as.map((a) => (a.id === editingId
-        ? { ...a, storeName: form.storeName, owner: form.owner, plan: form.plan, expiresAt: form.expiresAt }
+        ? { ...a, storeName: form.storeName, owner: form.owner, plan: form.plan, expiresAt: form.expiresAt, email: form.email.trim().toLowerCase(), password: form.password }
         : a)));
       notify("Akun toko diperbarui");
       cancelEdit();
     } else {
-      setAccounts((as) => [...as, { id: "A" + Date.now(), storeName: form.storeName, owner: form.owner, plan: form.plan, status: "Trial", expiresAt: form.expiresAt }]);
-      setForm({ storeName: "", owner: "", plan: "Basic", expiresAt: "" });
-      notify("Akun toko baru ditambahkan");
+      const email = form.email.trim().toLowerCase();
+      setAccounts((as) => [...as, {
+        id: "A" + Date.now(), storeName: form.storeName, owner: form.owner, plan: form.plan, status: "Trial", expiresAt: form.expiresAt,
+        email, password: form.password,
+        kasirEmail: "kasir@" + (email.split("@")[1] || "toko.id"), kasirPassword: form.password,
+      }]);
+      setForm(emptyForm);
+      notify("Akun toko baru ditambahkan — login Admin siap dipakai");
     }
   };
 
@@ -1978,7 +2367,7 @@ function AkunPage({ accounts, setAccounts, notify }) {
                       <div className="w-8 h-8 rounded-lg bg-violet-50 text-violet-600 flex items-center justify-center shrink-0"><Store className="w-4 h-4" /></div>
                       <div>
                         <p className="font-medium text-slate-700">{a.storeName}</p>
-                        <p className="text-xs text-slate-400">{a.owner}</p>
+                        <p className="text-xs text-slate-400">{a.owner} · {a.email}</p>
                       </div>
                     </div>
                   </td>
@@ -2007,6 +2396,8 @@ function AkunPage({ accounts, setAccounts, notify }) {
           <div className="flex flex-col gap-3">
             <input value={form.storeName} onChange={(e) => setForm({ ...form, storeName: e.target.value })} placeholder="Nama toko" className="border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-violet-400" />
             <input value={form.owner} onChange={(e) => setForm({ ...form, owner: e.target.value })} placeholder="Nama pemilik" className="border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-violet-400" />
+            <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} type="email" placeholder="Email login Admin" className="border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-violet-400" />
+            <input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Kata sandi login" className="border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-violet-400" />
             <select value={form.plan} onChange={(e) => setForm({ ...form, plan: e.target.value })} className="border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-violet-400">
               {PLAN_OPTIONS.map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
@@ -2030,8 +2421,12 @@ function AkunPage({ accounts, setAccounts, notify }) {
 }
 
 // ---------------- Dashboard shell ----------------
-function DashboardPage({ onLogout, settings, setSettings, role }) {
+function DashboardPage({ onLogout, settings, setSettings, role, account }) {
   const roleInfo = ROLES[role] || ROLES.admin;
+  // Super Admin has no store account (it manages the platform itself); for
+  // Admin/Kasir, show who's actually logged in rather than the fixed demo name.
+  const displayName = account ? (role === "kasir" ? `Kasir — ${account.storeName}` : account.owner) : roleInfo.name;
+  const displayEmail = account ? (role === "kasir" ? account.kasirEmail : account.email) : roleInfo.email;
   const allowedNav = navItems.filter((item) => item.roles.includes(roleInfo.key));
   // Kasir's daily job is ringing up sales, so land them straight on
   // Penjualan instead of the analytics-heavy Dashboard.
@@ -2118,9 +2513,9 @@ function DashboardPage({ onLogout, settings, setSettings, role }) {
             <div className="w-8 h-8 rounded-full bg-violet-100 flex items-center justify-center">
               {roleInfo.key === "superadmin" ? <Crown className="w-4 h-4 text-violet-600" /> : <User className="w-4 h-4 text-violet-600" />}
             </div>
-            <div className="hidden sm:block text-sm">
+            <div className="hidden sm:block text-sm" title={displayEmail || undefined}>
               <p className="text-xs text-slate-400 leading-none">{roleInfo.label}</p>
-              <p className="font-semibold text-slate-800 leading-tight">{roleInfo.name}</p>
+              <p className="font-semibold text-slate-800 leading-tight">{displayName}</p>
             </div>
             <button onClick={onLogout} title="Keluar" className="inline-flex items-center gap-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-lg px-2.5 py-2">
               <LogOut className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Keluar</span>
@@ -2141,19 +2536,35 @@ function DashboardPage({ onLogout, settings, setSettings, role }) {
 
 // ---------------- App root ----------------
 export default function App() {
-  const [page, setPage] = useState("landing"); // landing | login | dashboard
+  const [page, setPage] = useState("landing"); // landing | login | register | dashboard | menu
   const [role, setRole] = useState("admin");
+  // The real, authenticated store account behind the current session (null
+  // for Super Admin, which isn't tied to any single store's subscription).
+  const [account, setAccount] = useState(null);
+  const [prefillEmail, setPrefillEmail] = useState("");
   const [settings, setSettings] = useLocalStorageState("jawara_settings", defaultSettings);
 
-  const handleLogin = (loginRole) => {
+  const handleLogin = (loginRole, loggedInAccount) => {
     setRole(loginRole || "admin");
+    setAccount(loggedInAccount || null);
     setPage("dashboard");
   };
 
+  const handleRegistered = (email) => {
+    setPrefillEmail(email);
+    setPage("login");
+  };
+
+  const handleLogout = () => {
+    setAccount(null);
+    setPage("login");
+  };
+
   if (page === "menu") return <MenuPage onBack={() => setPage("landing")} />;
-  if (page === "login") return <LoginPage onLogin={handleLogin} onBack={() => setPage("landing")} settings={settings} />;
-  if (page === "dashboard") return <DashboardPage onLogout={() => setPage("login")} settings={settings} setSettings={setSettings} role={role} />;
-  return <LandingPage onLogin={() => setPage("login")} onViewMenu={() => setPage("menu")} settings={settings} />;
+  if (page === "register") return <RegisterPage onBack={() => setPage("landing")} onRegistered={handleRegistered} settings={settings} />;
+  if (page === "login") return <LoginPage onLogin={handleLogin} onBack={() => setPage("landing")} onGoRegister={() => setPage("register")} settings={settings} prefillEmail={prefillEmail} />;
+  if (page === "dashboard") return <DashboardPage onLogout={handleLogout} settings={settings} setSettings={setSettings} role={role} account={account} />;
+  return <LandingPage onLogin={() => setPage("login")} onRegister={() => setPage("register")} onViewMenu={() => setPage("menu")} settings={settings} />;
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App />);
