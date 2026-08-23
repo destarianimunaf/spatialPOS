@@ -207,6 +207,27 @@ var initialSuppliers = [
   { id: "S1", name: "CV Sumber Makmur", phone: "021-5566-7788" },
   { id: "S2", name: "PT Grosir Pangan", phone: "021-9988-7766" }
 ];
+var ROLES = {
+  kasir: { key: "kasir", label: "Kasir", name: "Rina Wulandari", email: "kasir@jawara.id", desc: "Akses kasir: hanya layar Penjualan." },
+  admin: { key: "admin", label: "Admin", name: "Desta Riani", email: "admin@jawara.id", desc: "Kelola penuh satu toko: produk, stok, laporan, dll." },
+  superadmin: { key: "superadmin", label: "Super Admin", name: "Desta Riani", email: "desta.ilkom@gmail.com", desc: "Semua akses Admin + kelola akun berbayar JAWARA." }
+};
+var navItems = [
+  { label: "Dashboard", icon: LayoutDashboard, roles: ["kasir", "admin", "superadmin"] },
+  { label: "Penjualan", icon: ShoppingCart, roles: ["kasir", "admin", "superadmin"] },
+  { label: "Produk", icon: Package, roles: ["admin", "superadmin"] },
+  { label: "Stok", icon: Boxes, roles: ["admin", "superadmin"] },
+  { label: "Barcode", icon: BarcodeIcon, roles: ["admin", "superadmin"] },
+  { label: "Pelanggan", icon: Users, roles: ["admin", "superadmin"] },
+  { label: "Supplier", icon: Truck, roles: ["admin", "superadmin"] },
+  { label: "Laporan", icon: FileText, roles: ["admin", "superadmin"] },
+  { label: "Kelola Akun", icon: Crown, roles: ["superadmin"] },
+  { label: "Pengaturan", icon: Settings, roles: ["admin", "superadmin"] }
+];
+var TOGGLEABLE_NAV_LABELS = navItems.filter((i) => i.label !== "Dashboard" && i.label !== "Kelola Akun").map((i) => i.label);
+var DEFAULT_ADMIN_PERMS = navItems.filter((i) => i.roles.includes("admin") && i.label !== "Dashboard").map((i) => i.label);
+var DEFAULT_KASIR_PERMS = navItems.filter((i) => i.roles.includes("kasir") && i.label !== "Dashboard").map((i) => i.label);
+var defaultPermissions = () => ({ admin: [...DEFAULT_ADMIN_PERMS], kasir: [...DEFAULT_KASIR_PERMS] });
 var initialAccounts = [
   {
     id: "A1",
@@ -280,27 +301,6 @@ var SUBSCRIPTION_PLANS = [
 ];
 var OWNER_BANK_ACCOUNT = { bank: "BCA", number: "08123456789", holder: "Desta Riani" };
 var OWNER_EMAIL = "destarianimunaf@gmail.com";
-var ROLES = {
-  kasir: { key: "kasir", label: "Kasir", name: "Rina Wulandari", email: "kasir@jawara.id", desc: "Akses kasir: hanya layar Penjualan." },
-  admin: { key: "admin", label: "Admin", name: "Desta Riani", email: "admin@jawara.id", desc: "Kelola penuh satu toko: produk, stok, laporan, dll." },
-  superadmin: { key: "superadmin", label: "Super Admin", name: "Desta Riani", email: "desta.ilkom@gmail.com", desc: "Semua akses Admin + kelola akun berbayar JAWARA." }
-};
-var navItems = [
-  { label: "Dashboard", icon: LayoutDashboard, roles: ["kasir", "admin", "superadmin"] },
-  { label: "Penjualan", icon: ShoppingCart, roles: ["kasir", "admin", "superadmin"] },
-  { label: "Produk", icon: Package, roles: ["admin", "superadmin"] },
-  { label: "Stok", icon: Boxes, roles: ["admin", "superadmin"] },
-  { label: "Barcode", icon: BarcodeIcon, roles: ["admin", "superadmin"] },
-  { label: "Pelanggan", icon: Users, roles: ["admin", "superadmin"] },
-  { label: "Supplier", icon: Truck, roles: ["admin", "superadmin"] },
-  { label: "Laporan", icon: FileText, roles: ["admin", "superadmin"] },
-  { label: "Kelola Akun", icon: Crown, roles: ["superadmin"] },
-  { label: "Pengaturan", icon: Settings, roles: ["admin", "superadmin"] }
-];
-var TOGGLEABLE_NAV_LABELS = navItems.filter((i) => i.label !== "Dashboard" && i.label !== "Kelola Akun").map((i) => i.label);
-var DEFAULT_ADMIN_PERMS = navItems.filter((i) => i.roles.includes("admin") && i.label !== "Dashboard").map((i) => i.label);
-var DEFAULT_KASIR_PERMS = navItems.filter((i) => i.roles.includes("kasir") && i.label !== "Dashboard").map((i) => i.label);
-var defaultPermissions = () => ({ admin: [...DEFAULT_ADMIN_PERMS], kasir: [...DEFAULT_KASIR_PERMS] });
 var features = [
   {
     title: "Penjualan (POS)",
