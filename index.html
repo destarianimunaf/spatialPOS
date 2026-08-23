@@ -965,7 +965,7 @@ function PenjualanPage({ products, setProducts, transactions, setTransactions, n
                     customer-facing browse screen) — the cashier's own grid
                     stays icon-only so it loads and scans fast. */}
                 {customerMode && p.image ? (
-                  <div className="rounded-lg overflow-hidden mb-2.5 w-14 h-14 bg-slate-100">
+                  <div className="rounded-xl overflow-hidden mb-3 w-full aspect-square bg-slate-100">
                     <img src={p.image} alt={p.name} loading="lazy" className="w-full h-full object-cover" />
                   </div>
                 ) : (
