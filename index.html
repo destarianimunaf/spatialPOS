@@ -196,6 +196,12 @@ const SUBSCRIPTION_PLANS = [
   { key: "Premium", price: 349000 },
 ];
 
+// Real payment destination for JAWARA subscriptions — manual transfer +
+// email verification (this is a backend-less static app, so there's no
+// payment gateway; the platform owner checks proof-of-transfer by hand).
+const OWNER_BANK_ACCOUNT = { bank: "BCA", number: "08123456789", holder: "Desta Riani" };
+const OWNER_EMAIL = "destarianimunaf@gmail.com";
+
 // Three access levels for staff logging into a store's JAWARA account.
 // Kasir only needs the sales counter; Admin runs the whole store; Super
 // Admin additionally manages which stores have a paid JAWARA subscription.
@@ -429,7 +435,7 @@ function todayStr() { return new Date().toISOString().slice(0, 10); }
 // subscription hasn't passed its expiry date.
 function isAccountUsable(acc) {
   if (!acc) return false;
-  if (acc.status === "Nonaktif") return false;
+  if (acc.status === "Nonaktif" || acc.status === "Menunggu Verifikasi") return false;
   if (acc.expiresAt && acc.expiresAt < todayStr()) return false;
   return true;
 }
@@ -649,6 +655,10 @@ function LoginPage({ onLogin, onBack, onGoRegister, settings, prefillEmail, init
       setError("Kata sandi salah.");
       return;
     }
+    if (acc.status === "Menunggu Verifikasi") {
+      setError(`Pembayaran untuk "${acc.storeName}" sedang diverifikasi tim JAWARA (maks. 1x24 jam setelah bukti transfer diterima). Belum bisa masuk dulu ya.`);
+      return;
+    }
     if (acc.status === "Nonaktif") {
       setError(`Langganan JAWARA untuk "${acc.storeName}" nonaktif. Hubungi Super Admin untuk mengaktifkan kembali.`);
       return;
@@ -777,41 +787,18 @@ function QrPattern({ seed }) {
   );
 }
 
-// Payment popup shown specifically when a store owner chooses QRIS while
-// becoming a JAWARA subscriber (Daftar & Berlangganan → Pembayaran).
-function QrisPopup({ amount, storeName, paying, onConfirm, onClose }) {
-  return (
-    <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xs p-6 text-center relative">
-        <button onClick={onClose} className="absolute top-4 right-4 text-stone-400 hover:text-stone-600">
-          <X className="w-5 h-5" />
-        </button>
-        <QrCode className="w-5 h-5 text-[#D5451B] mx-auto mb-1.5" />
-        <p className="font-display text-lg uppercase text-stone-900 mb-0.5">Scan QRIS</p>
-        <p className="text-xs text-stone-500 mb-4">Langganan JAWARA — {storeName}</p>
-        <div className="bg-white border-2 border-stone-900 rounded-xl p-2.5 mx-auto w-fit mb-4">
-          <QrPattern seed={storeName + amount} />
-        </div>
-        <p className="font-mono-nota text-2xl font-bold text-stone-900 mb-1">{rupiah(amount)}</p>
-        <p className="text-[11px] text-stone-400 mb-5 leading-relaxed">Berlaku untuk semua e-wallet &amp; m-banking — GoPay, OVO, DANA, ShopeePay, BCA, dan lainnya.</p>
-        <button onClick={onConfirm} disabled={paying} className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-stone-900 text-white font-semibold text-sm hover:bg-stone-800 disabled:opacity-60">
-          {paying ? <><Loader2 className="w-4 h-4 animate-spin" /> Memeriksa Pembayaran...</> : <><CheckCircle2 className="w-4 h-4" /> Saya Sudah Bayar</>}
-        </button>
-        <p className="font-mono-nota text-[10px] text-stone-400 mt-3">Simulasi QRIS untuk demo — tombol di atas melanjutkan proses.</p>
-      </div>
-    </div>
-  );
-}
+// Payment info card for the "Daftar & Berlangganan" flow reuses this
+// pattern inline (see RegisterPage) — see QrPattern above.
 
 function RegisterPage({ onBack, onRegistered, settings }) {
-  const [step, setStep] = useState(1); // 1: data toko, 2: bayar
+  const [step, setStep] = useState(1); // 1: data toko, 2: bayar, 3: menunggu verifikasi
   const [form, setForm] = useState({ storeName: "", owner: "", email: "", password: "", confirmPassword: "", plan: "Pro" });
   const [paymentMethod, setPaymentMethod] = useState("qris");
   const [error, setError] = useState("");
-  const [paying, setPaying] = useState(false);
-  const [showQris, setShowQris] = useState(false);
+  const [copiedField, setCopiedField] = useState("");
 
   const selectedPlan = SUBSCRIPTION_PLANS.find((p) => p.key === form.plan) || SUBSCRIPTION_PLANS[0];
+  const kasirEmail = "kasir@" + (form.email.trim().toLowerCase().split("@")[1] || "toko.id");
 
   const goToPayment = (e) => {
     e.preventDefault();
@@ -837,33 +824,44 @@ function RegisterPage({ onBack, onRegistered, settings }) {
     setStep(2);
   };
 
-  // No real payment gateway here (this is a static, backend-less app) — but
-  // the account is only created and made Aktif *after* this step, mirroring
-  // a real "pay to activate" subscription flow rather than granting access
-  // for free.
-  const pay = () => {
-    setPaying(true);
-    setTimeout(() => {
-      const accounts = readAccounts();
-      const expires = new Date();
-      expires.setDate(expires.getDate() + 30);
-      const newAccount = {
-        id: "A" + Date.now(),
-        storeName: form.storeName.trim(),
-        owner: form.owner.trim(),
-        plan: form.plan,
-        status: "Aktif",
-        expiresAt: expires.toISOString().slice(0, 10),
-        email: form.email.trim().toLowerCase(),
-        password: form.password,
-        kasirEmail: "kasir@" + form.email.trim().toLowerCase().split("@")[1],
-        kasirPassword: form.password,
-      };
-      writeAccounts([...accounts, newAccount]);
-      setPaying(false);
-      setShowQris(false);
-      onRegistered(newAccount.email);
-    }, 900);
+  const copyText = (text, field) => {
+    navigator.clipboard?.writeText(text).then(() => {
+      setCopiedField(field);
+      setTimeout(() => setCopiedField(""), 1500);
+    });
+  };
+
+  // No payment gateway here (static, backend-less app) — a real person
+  // (the JAWARA owner) manually checks proof-of-transfer sent to their
+  // email, so the account sits as "Menunggu Verifikasi" until they flip it
+  // to Aktif from Kelola Akun. This mirrors how a real solo-operator/small
+  // team actually runs subscription billing without a payment gateway.
+  const mailSubject = encodeURIComponent(`Bukti Transfer Langganan JAWARA - ${form.storeName || "Toko Baru"}`);
+  const mailBody = encodeURIComponent(
+    `Halo Admin JAWARA,\n\nSaya baru saja transfer untuk berlangganan JAWARA. Bukti transfer terlampir.\n\nNama Toko : ${form.storeName}\nNama Pemilik : ${form.owner}\nEmail Akun : ${form.email}\nPaket : ${selectedPlan.key} (${rupiah(selectedPlan.price)}/bulan)\nMetode : ${(PAYMENT_METHODS.find((m) => m.key === paymentMethod) || {}).label || paymentMethod}\n\n(Mohon lampirkan screenshot/foto bukti transfer sebelum mengirim email ini.)\n\nTerima kasih.`
+  );
+  const mailtoHref = `mailto:${OWNER_EMAIL}?subject=${mailSubject}&body=${mailBody}`;
+
+  // Creates the store account as "Menunggu Verifikasi" the moment the owner
+  // sends proof of transfer — the account itself isn't Aktif yet.
+  const finalizeRegistration = () => {
+    const accounts = readAccounts();
+    const expires = new Date();
+    expires.setDate(expires.getDate() + 30);
+    const newAccount = {
+      id: "A" + Date.now(),
+      storeName: form.storeName.trim(),
+      owner: form.owner.trim(),
+      plan: form.plan,
+      status: "Menunggu Verifikasi",
+      expiresAt: expires.toISOString().slice(0, 10),
+      email: form.email.trim().toLowerCase(),
+      password: form.password,
+      kasirEmail,
+      kasirPassword: form.password,
+    };
+    writeAccounts([...accounts, newAccount]);
+    setStep(3);
   };
 
   return (
@@ -872,12 +870,14 @@ function RegisterPage({ onBack, onRegistered, settings }) {
       <div className="absolute -bottom-24 -right-24 w-80 h-80 rounded-full bg-[#F0A202]/15 blur-3xl" />
 
       <div className="w-full max-w-md bg-nota-paper rounded-3xl shadow-2xl p-8 relative border border-white/10">
-        <button onClick={step === 2 ? () => setStep(1) : onBack} className="inline-flex items-center gap-1.5 font-mono-nota text-xs font-semibold text-stone-600 hover:text-stone-900 hover:bg-stone-900/5 border border-stone-900/15 rounded-full px-3 py-1.5 mb-6 transition-colors">
-          <ArrowLeft className="w-3.5 h-3.5" /> {step === 2 ? "Kembali ke Data Toko" : "Kembali ke Beranda"}
-        </button>
+        {step !== 3 && (
+          <button onClick={step === 2 ? () => setStep(1) : onBack} className="inline-flex items-center gap-1.5 font-mono-nota text-xs font-semibold text-stone-600 hover:text-stone-900 hover:bg-stone-900/5 border border-stone-900/15 rounded-full px-3 py-1.5 mb-6 transition-colors">
+            <ArrowLeft className="w-3.5 h-3.5" /> {step === 2 ? "Kembali ke Data Toko" : "Kembali ke Beranda"}
+          </button>
+        )}
         <div className="mb-6"><Logo logoUrl={settings.logoUrl} /></div>
 
-        {step === 1 ? (
+        {step === 1 && (
           <>
             <h1 className="font-display text-2xl uppercase text-stone-900 mb-1">Daftar &amp; Berlangganan</h1>
             <p className="text-sm text-stone-500 mb-5">Buat akun toko Anda sendiri — login sungguhan setelah berlangganan aktif.</p>
@@ -937,10 +937,12 @@ function RegisterPage({ onBack, onRegistered, settings }) {
               </button>
             </form>
           </>
-        ) : (
+        )}
+
+        {step === 2 && (
           <>
             <h1 className="font-display text-2xl uppercase text-stone-900 mb-1">Pembayaran</h1>
-            <p className="text-sm text-stone-500 mb-5">Paket <strong>{selectedPlan.key}</strong> — aktif 30 hari sejak pembayaran berhasil.</p>
+            <p className="text-sm text-stone-500 mb-5">Paket <strong>{selectedPlan.key}</strong> — aktif 30 hari sejak pembayaran diverifikasi.</p>
 
             <div className="flex items-center justify-between bg-white border border-stone-900/10 rounded-xl px-4 py-3 mb-5">
               <span className="text-sm text-stone-600">Total Tagihan</span>
@@ -948,7 +950,7 @@ function RegisterPage({ onBack, onRegistered, settings }) {
             </div>
 
             <label className="text-xs font-medium text-stone-600 mb-1.5 block">Metode Pembayaran</label>
-            <div className="grid grid-cols-2 gap-2 mb-6">
+            <div className="grid grid-cols-2 gap-2 mb-4">
               {PAYMENT_METHODS.filter((m) => m.key !== "tunai").map((m) => (
                 <button type="button" key={m.key} onClick={() => setPaymentMethod(m.key)} className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-left transition-colors ${paymentMethod === m.key ? "border-[#D5451B] bg-[#D5451B]/10" : "border-stone-900/10 bg-white hover:border-stone-900/25"}`}>
                   <m.icon className="w-4 h-4 text-stone-600 shrink-0" />
@@ -957,23 +959,69 @@ function RegisterPage({ onBack, onRegistered, settings }) {
               ))}
             </div>
 
-            <button onClick={() => (paymentMethod === "qris" ? setShowQris(true) : pay())} disabled={paying} className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-stone-900 text-white font-semibold text-sm hover:bg-stone-800 disabled:opacity-60">
-              {paying ? <><Loader2 className="w-4 h-4 animate-spin" /> Memproses Pembayaran...</> : <>{paymentMethod === "qris" ? <QrCode className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />} Bayar {rupiah(selectedPlan.price)}</>}
+            {paymentMethod === "qris" ? (
+              <div className="bg-white border border-stone-900/10 rounded-xl p-4 mb-4 text-center">
+                <div className="bg-white border-2 border-stone-900 rounded-xl p-2.5 mx-auto w-fit mb-3">
+                  <QrPattern seed={(form.storeName || "toko") + selectedPlan.price} />
+                </div>
+                <p className="text-xs text-stone-500">Scan QRIS ini dari e-wallet atau m-banking apa saja (GoPay, OVO, DANA, ShopeePay, BCA, dll) sejumlah <strong className="text-stone-800">{rupiah(selectedPlan.price)}</strong>.</p>
+              </div>
+            ) : (
+              <div className="bg-white border border-stone-900/10 rounded-xl p-4 mb-4">
+                <p className="text-xs text-stone-500 mb-2">Transfer sejumlah <strong className="text-stone-800">{rupiah(selectedPlan.price)}</strong> ke rekening berikut:</p>
+                <div className="flex items-center justify-between bg-stone-50 border border-stone-900/10 rounded-lg px-3 py-2.5">
+                  <div>
+                    <p className="font-mono-nota text-sm font-bold text-stone-900">{OWNER_BANK_ACCOUNT.bank} {OWNER_BANK_ACCOUNT.number}</p>
+                    <p className="text-xs text-stone-500">a.n. {OWNER_BANK_ACCOUNT.holder}</p>
+                  </div>
+                  <button type="button" onClick={() => copyText(OWNER_BANK_ACCOUNT.number, "rek")} className="shrink-0 text-[11px] font-semibold text-[#D5451B] hover:underline">
+                    {copiedField === "rek" ? "Tersalin!" : "Salin"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between gap-2 bg-[#F0A202]/10 border border-[#F0A202]/30 rounded-xl px-3 py-2.5 mb-5">
+              <span className="font-mono-nota text-[11px] text-stone-600 leading-snug">
+                Kirim bukti transfer ke:<br /><strong className="text-stone-900">{OWNER_EMAIL}</strong>
+              </span>
+              <button type="button" onClick={() => copyText(OWNER_EMAIL, "email")} className="shrink-0 text-[11px] font-semibold text-[#8a5c02] hover:underline">
+                {copiedField === "email" ? "Tersalin!" : "Salin"}
+              </button>
+            </div>
+
+            {error && (
+              <p className="flex items-start gap-1.5 text-xs text-rose-600 bg-rose-50 border border-rose-100 rounded-lg px-3 py-2 mb-3">
+                <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {error}
+              </p>
+            )}
+
+            <a href={mailtoHref} onClick={finalizeRegistration} className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-stone-900 text-white font-semibold text-sm hover:bg-stone-800">
+              <Mail className="w-4 h-4" /> Sudah Transfer — Kirim Bukti via Email
+            </a>
+            <p className="text-center font-mono-nota text-[10px] text-stone-400 mt-4">Akun toko dibuat setelah bukti dikirim, lalu diaktifkan Super Admin maks. 1x24 jam setelah dicek.</p>
+          </>
+        )}
+
+        {step === 3 && (
+          <>
+            <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center mb-4"><CheckCircle2 className="w-6 h-6" /></div>
+            <h1 className="font-display text-2xl uppercase text-stone-900 mb-1">Menunggu Verifikasi</h1>
+            <p className="text-sm text-stone-500 mb-5 leading-relaxed">
+              Akun toko <strong className="text-stone-800">{form.storeName}</strong> sudah dibuat. Setelah bukti transfer Anda diterima &amp; dicek di <strong className="text-stone-800">{OWNER_EMAIL}</strong>, akun akan diaktifkan Super Admin (maks. 1x24 jam) dan Anda bisa masuk.
+            </p>
+            <div className="bg-white border border-stone-900/10 rounded-xl p-4 mb-6 flex flex-col gap-2 font-mono-nota text-xs">
+              <p className="text-stone-400">LOGIN ADMIN</p>
+              <p className="text-stone-800 font-semibold">{form.email.trim().toLowerCase()}</p>
+              <p className="text-stone-400 mt-1.5">LOGIN KASIR</p>
+              <p className="text-stone-800 font-semibold">{kasirEmail}</p>
+            </div>
+            <button onClick={() => onRegistered(form.email.trim().toLowerCase())} className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-stone-900 text-white font-semibold text-sm hover:bg-stone-800">
+              <LogIn className="w-4 h-4" /> Ke Halaman Masuk
             </button>
-            <p className="text-center font-mono-nota text-[10px] text-stone-400 mt-4">Simulasi pembayaran untuk keperluan demo — akun baru langsung Aktif setelah dikonfirmasi.</p>
           </>
         )}
       </div>
-
-      {showQris && (
-        <QrisPopup
-          amount={selectedPlan.price}
-          storeName={form.storeName.trim() || "Toko Anda"}
-          paying={paying}
-          onConfirm={pay}
-          onClose={() => setShowQris(false)}
-        />
-      )}
     </div>
   );
 }
@@ -2412,8 +2460,15 @@ function AkunPage({ accounts, setAccounts, notify }) {
     }
   };
 
+  // Clicking a pending account's badge is the Super Admin's "I checked the
+  // proof-of-transfer email, activate it" action; Aktif/Nonaktif still just
+  // toggles back and forth as before.
   const toggleStatus = (id) => {
-    setAccounts((as) => as.map((a) => (a.id === id ? { ...a, status: a.status === "Aktif" ? "Nonaktif" : "Aktif" } : a)));
+    setAccounts((as) => as.map((a) => {
+      if (a.id !== id) return a;
+      if (a.status === "Menunggu Verifikasi") return { ...a, status: "Aktif" };
+      return { ...a, status: a.status === "Aktif" ? "Nonaktif" : "Aktif" };
+    }));
   };
 
   const removeAccount = (id) => {
@@ -2427,6 +2482,7 @@ function AkunPage({ accounts, setAccounts, notify }) {
     Aktif: "bg-emerald-50 text-emerald-600",
     Trial: "bg-amber-50 text-amber-600",
     Nonaktif: "bg-rose-50 text-rose-600",
+    "Menunggu Verifikasi": "bg-orange-50 text-orange-600",
   };
 
   return (
@@ -2462,7 +2518,7 @@ function AkunPage({ accounts, setAccounts, notify }) {
                   </td>
                   <td className="px-4 py-3 text-slate-600">{a.plan}</td>
                   <td className="px-4 py-3">
-                    <button onClick={() => toggleStatus(a.id)} title="Klik untuk ubah status Aktif/Nonaktif" className={`text-xs font-medium px-2.5 py-1 rounded-full ${statusStyle[a.status]}`}>
+                    <button onClick={() => toggleStatus(a.id)} title={a.status === "Menunggu Verifikasi" ? "Klik untuk aktifkan setelah bukti transfer dicek" : "Klik untuk ubah status Aktif/Nonaktif"} className={`text-xs font-medium px-2.5 py-1 rounded-full ${statusStyle[a.status]}`}>
                       {a.status}
                     </button>
                   </td>
