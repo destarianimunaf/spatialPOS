@@ -235,6 +235,34 @@ const features = [
 
 const rupiah = (n) => "Rp " + n.toLocaleString("id-ID");
 
+// Short two-tone "cring!" cash-register chime played on successful checkout.
+// Synthesized with Web Audio API so no external audio file/asset is needed.
+function playCashSound() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const now = ctx.currentTime;
+    [1568, 2093].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      const start = now + i * 0.08;
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(0.25, start + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.5);
+      osc.start(start);
+      osc.stop(start + 0.5);
+    });
+    setTimeout(() => ctx.close(), 900);
+  } catch (err) {
+    console.warn("Gagal memutar suara notifikasi:", err);
+  }
+}
+
 // Comparison used on the landing page's "Kenapa JAWARA" section. Framed
 // against "aplikasi kasir lain pada umumnya" (typical POS software patterns
 // in the market) rather than any single named competitor.
@@ -769,11 +797,15 @@ function PenjualanPage({ products, setProducts, transactions, setTransactions, n
   const [scanValue, setScanValue] = useState("");
   const [lastInvoice, setLastInvoice] = useState(null);
   const [showInvoice, setShowInvoice] = useState(false);
+  // When true, the screen switches to a bigger, touch-friendly menu that a
+  // customer can browse and add to themselves — no scanner, no checkout
+  // button — then hands control back to the cashier to take payment.
+  const [customerMode, setCustomerMode] = useState(false);
   const scanRef = useRef(null);
 
   useEffect(() => {
-    scanRef.current?.focus();
-  }, []);
+    if (!customerMode) scanRef.current?.focus();
+  }, [customerMode]);
 
   const addToCart = (product) => {
     const inCart = cart.find((c) => c.id === product.id)?.qty || 0;
@@ -827,25 +859,43 @@ function PenjualanPage({ products, setProducts, transactions, setTransactions, n
     setLastInvoice(newTx);
     setShowInvoice(true);
     setCart([]);
+    playCashSound();
     notify(`Transaksi ${newTx.id} berhasil — ${rupiah(total)}`);
   };
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
       <div className="lg:col-span-2">
-        <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2.5 mb-3 focus-within:border-violet-400">
-          <ScanLine className="w-4 h-4 text-violet-500 shrink-0" />
-          <input
-            ref={scanRef}
-            value={scanValue}
-            onChange={(e) => setScanValue(e.target.value)}
-            onKeyDown={handleScan}
-            placeholder="Scan atau ketik barcode produk lalu tekan Enter..."
-            className="flex-1 text-sm outline-none"
-          />
-        </div>
+        {customerMode ? (
+          <div className="flex items-center justify-between gap-3 bg-violet-600 text-white rounded-xl px-4 py-3 mb-3">
+            <div>
+              <p className="font-semibold text-sm">Silakan Pilih Menu Anda</p>
+              <p className="text-xs text-violet-100">Ketuk produk untuk menambah ke pesanan</p>
+            </div>
+            <button onClick={() => setCustomerMode(false)} className="shrink-0 inline-flex items-center gap-1.5 bg-white text-violet-700 text-xs font-semibold px-3 py-2 rounded-lg hover:bg-violet-50">
+              <ArrowLeft className="w-3.5 h-3.5" /> Kembali ke Kasir
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 mb-3">
+            <div className="flex-1 flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2.5 focus-within:border-violet-400">
+              <ScanLine className="w-4 h-4 text-violet-500 shrink-0" />
+              <input
+                ref={scanRef}
+                value={scanValue}
+                onChange={(e) => setScanValue(e.target.value)}
+                onKeyDown={handleScan}
+                placeholder="Scan atau ketik barcode produk lalu tekan Enter..."
+                className="flex-1 text-sm outline-none"
+              />
+            </div>
+            <button onClick={() => setCustomerMode(true)} title="Serahkan layar ke pelanggan untuk memilih sendiri" className="shrink-0 inline-flex items-center gap-1.5 border border-violet-200 bg-violet-50 text-violet-700 text-xs font-semibold px-3 py-2.5 rounded-xl hover:bg-violet-100">
+              <Users className="w-4 h-4" /> <span className="hidden sm:inline">Mode Pelanggan</span>
+            </button>
+          </div>
+        )}
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <div className={`grid grid-cols-2 sm:grid-cols-3 gap-3 ${customerMode ? "sm:grid-cols-2 lg:grid-cols-3 gap-4" : ""}`}>
           {products.map((p) => {
             const Icon = ICONS[p.iconName] || Box;
             return (
@@ -853,13 +903,13 @@ function PenjualanPage({ products, setProducts, transactions, setTransactions, n
                 key={p.id}
                 onClick={() => addToCart(p)}
                 disabled={p.stock === 0}
-                className="text-left bg-white border border-slate-100 rounded-2xl p-3.5 shadow-sm hover:shadow-md hover:border-violet-200 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                className={`text-left bg-white border border-slate-100 rounded-2xl shadow-sm hover:shadow-md hover:border-violet-200 transition-all disabled:opacity-40 disabled:cursor-not-allowed ${customerMode ? "p-5" : "p-3.5"}`}
               >
-                <div className={`w-9 h-9 rounded-lg flex items-center justify-center mb-2.5 ${p.color}`}><Icon className="w-4 h-4" /></div>
-                <p className="text-sm font-semibold text-slate-800">{p.name}</p>
-                <p className="text-xs text-slate-400 mb-1">Stok: {p.stock}</p>
-                <p className="text-sm font-bold text-violet-600 mb-1">{rupiah(p.price)}</p>
-                <p className="text-[10px] font-mono text-slate-300 tracking-wide">{p.barcode}</p>
+                <div className={`rounded-lg flex items-center justify-center mb-2.5 ${p.color} ${customerMode ? "w-14 h-14" : "w-9 h-9"}`}><Icon className={customerMode ? "w-7 h-7" : "w-4 h-4"} /></div>
+                <p className={`font-semibold text-slate-800 ${customerMode ? "text-base" : "text-sm"}`}>{p.name}</p>
+                {!customerMode && <p className="text-xs text-slate-400 mb-1">Stok: {p.stock}</p>}
+                <p className={`font-bold text-violet-600 mb-1 ${customerMode ? "text-lg" : "text-sm"}`}>{rupiah(p.price)}</p>
+                {!customerMode && <p className="text-[10px] font-mono text-slate-300 tracking-wide">{p.barcode}</p>}
               </button>
             );
           })}
@@ -869,11 +919,11 @@ function PenjualanPage({ products, setProducts, transactions, setTransactions, n
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex flex-col h-fit sticky top-20">
         <div className="flex items-center gap-2 mb-3">
           <ShoppingCart className="w-4 h-4 text-violet-600" />
-          <p className="font-semibold text-slate-800 text-sm">Keranjang</p>
+          <p className="font-semibold text-slate-800 text-sm">{customerMode ? "Pesanan Anda" : "Keranjang"}</p>
         </div>
 
         {cartItems.length === 0 ? (
-          <p className="text-sm text-slate-400 py-8 text-center">Klik produk atau scan barcode untuk menambah ke keranjang.</p>
+          <p className="text-sm text-slate-400 py-8 text-center">{customerMode ? "Ketuk menu di sebelah kiri untuk memesan." : "Klik produk atau scan barcode untuk menambah ke keranjang."}</p>
         ) : (
           <div className="flex flex-col divide-y divide-slate-50 mb-3 max-h-72 overflow-y-auto">
             {cartItems.map((i) => (
@@ -899,9 +949,15 @@ function PenjualanPage({ products, setProducts, transactions, setTransactions, n
           <p className="text-sm font-medium text-slate-500">Total</p>
           <p className="text-lg font-bold text-violet-600">{rupiah(total)}</p>
         </div>
-        <button onClick={checkout} disabled={cartItems.length === 0} className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-amber-400 text-violet-900 font-semibold text-sm hover:bg-amber-300 disabled:opacity-40 disabled:cursor-not-allowed">
-          <CreditCard className="w-4 h-4" /> Bayar Sekarang
-        </button>
+        {customerMode ? (
+          <button onClick={() => setCustomerMode(false)} disabled={cartItems.length === 0} className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-violet-600 text-white font-semibold text-sm hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed">
+            <ArrowRight className="w-4 h-4" /> Serahkan ke Kasir
+          </button>
+        ) : (
+          <button onClick={checkout} disabled={cartItems.length === 0} className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-amber-400 text-violet-900 font-semibold text-sm hover:bg-amber-300 disabled:opacity-40 disabled:cursor-not-allowed">
+            <CreditCard className="w-4 h-4" /> Bayar Sekarang
+          </button>
+        )}
       </div>
 
       {showInvoice && <InvoiceModal invoice={lastInvoice} settings={settings} onClose={() => setShowInvoice(false)} />}
