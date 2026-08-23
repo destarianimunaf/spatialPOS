@@ -581,8 +581,8 @@ function MenuPage({ onBack }) {
   );
 }
 
-function LoginPage({ onLogin, onBack, onGoRegister, settings, prefillEmail }) {
-  const [selectedRole, setSelectedRole] = useState("admin");
+function LoginPage({ onLogin, onBack, onGoRegister, settings, prefillEmail, initialRole }) {
+  const [selectedRole, setSelectedRole] = useState(initialRole || "admin");
   const [email, setEmail] = useState(prefillEmail || "");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -593,18 +593,23 @@ function LoginPage({ onLogin, onBack, onGoRegister, settings, prefillEmail }) {
     setError("");
   };
 
+  // Shown directly on screen (not just after tapping "Isi Otomatis") so the
+  // Super Admin / system-owner login is never a mystery — pick the role tab
+  // above and the working credentials for it are right here.
+  const demoAccountForCred = readAccounts().find((a) => a.id === "A1");
+  const demoCredential = selectedRole === "superadmin"
+    ? SUPERADMIN_CREDENTIAL
+    : {
+        email: selectedRole === "kasir" ? demoAccountForCred.kasirEmail : demoAccountForCred.email,
+        password: selectedRole === "kasir" ? demoAccountForCred.kasirPassword : demoAccountForCred.password,
+      };
+
   // Fills in a working demo login for the currently-selected role — the
   // Pro-plan, Aktif "Toko Sumber Rejeki" account — so reviewers can try the
   // real auth flow without having to register first.
   const fillDemo = () => {
-    if (selectedRole === "superadmin") {
-      setEmail(SUPERADMIN_CREDENTIAL.email);
-      setPassword(SUPERADMIN_CREDENTIAL.password);
-    } else {
-      const demoAccount = readAccounts().find((a) => a.id === "A1");
-      setEmail(selectedRole === "kasir" ? demoAccount.kasirEmail : demoAccount.email);
-      setPassword(selectedRole === "kasir" ? demoAccount.kasirPassword : demoAccount.password);
-    }
+    setEmail(demoCredential.email);
+    setPassword(demoCredential.password);
     setError("");
   };
 
@@ -685,11 +690,17 @@ function LoginPage({ onLogin, onBack, onGoRegister, settings, prefillEmail }) {
             </button>
           ))}
         </div>
-        <p className="font-mono-nota text-[11px] text-stone-500 bg-white border border-stone-900/10 rounded-lg px-3 py-2 mb-5">{ROLES[selectedRole].desc}</p>
+        <p className="font-mono-nota text-[11px] text-stone-500 bg-white border border-stone-900/10 rounded-lg px-3 py-2 mb-3">{ROLES[selectedRole].desc}</p>
 
-        <button onClick={fillDemo} className="w-full mb-5 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-[#F0A202]/40 bg-[#F0A202]/10 text-[#8a5c02] text-sm font-semibold hover:bg-[#F0A202]/20">
-          <Sparkles className="w-4 h-4" /> Isi Data Demo (Akun Aktif) — {ROLES[selectedRole].label}
-        </button>
+        <div className="flex items-center justify-between gap-2 font-mono-nota text-[11px] text-stone-600 bg-[#F0A202]/10 border border-[#F0A202]/30 rounded-lg px-3 py-2.5 mb-5">
+          <span className="leading-snug">
+            Akun demo {ROLES[selectedRole].label}:<br />
+            <strong className="text-stone-900">{demoCredential.email}</strong> / <strong className="text-stone-900">{demoCredential.password}</strong>
+          </span>
+          <button type="button" onClick={fillDemo} className="shrink-0 inline-flex items-center gap-1 rounded-lg border border-[#F0A202]/50 bg-white px-2.5 py-1.5 text-[#8a5c02] font-semibold hover:bg-[#F0A202]/20">
+            <Sparkles className="w-3.5 h-3.5" /> Isi
+          </button>
+        </div>
 
         <form onSubmit={submit} className="flex flex-col gap-3">
           <div>
@@ -731,12 +742,74 @@ function LoginPage({ onLogin, onBack, onGoRegister, settings, prefillEmail }) {
 // store account (with its own Admin + Kasir login) that LoginPage can
 // authenticate against — this is what makes a person an actual "paid /
 // subscriber" user of the system instead of a demo role.
+// Deterministic pseudo-QR grid (with real QR-style finder squares in the
+// three corners) — no external QR library, just enough visual fidelity for
+// a believable "Scan QRIS" popup in this backend-less demo.
+function QrPattern({ seed }) {
+  const size = 21;
+  let h = 0;
+  const s = String(seed);
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  const cells = Array.from({ length: size }, () => Array(size).fill(false));
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      h = (h * 1103515245 + 12345) >>> 0;
+      cells[r][c] = (h >>> 16) % 5 === 0;
+    }
+  }
+  const finder = (r0, c0) => {
+    for (let r = 0; r < 7; r++) {
+      for (let c = 0; c < 7; c++) {
+        const border = r === 0 || r === 6 || c === 0 || c === 6;
+        const core = r >= 2 && r <= 4 && c >= 2 && c <= 4;
+        cells[r0 + r][c0 + c] = border || core;
+      }
+    }
+  };
+  finder(0, 0);
+  finder(0, size - 7);
+  finder(size - 7, 0);
+
+  return (
+    <div className="grid" style={{ gridTemplateColumns: `repeat(${size}, 6px)`, gridTemplateRows: `repeat(${size}, 6px)` }}>
+      {cells.flat().map((on, i) => <div key={i} className={on ? "bg-stone-900" : "bg-white"} />)}
+    </div>
+  );
+}
+
+// Payment popup shown specifically when a store owner chooses QRIS while
+// becoming a JAWARA subscriber (Daftar & Berlangganan → Pembayaran).
+function QrisPopup({ amount, storeName, paying, onConfirm, onClose }) {
+  return (
+    <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xs p-6 text-center relative">
+        <button onClick={onClose} className="absolute top-4 right-4 text-stone-400 hover:text-stone-600">
+          <X className="w-5 h-5" />
+        </button>
+        <QrCode className="w-5 h-5 text-[#D5451B] mx-auto mb-1.5" />
+        <p className="font-display text-lg uppercase text-stone-900 mb-0.5">Scan QRIS</p>
+        <p className="text-xs text-stone-500 mb-4">Langganan JAWARA — {storeName}</p>
+        <div className="bg-white border-2 border-stone-900 rounded-xl p-2.5 mx-auto w-fit mb-4">
+          <QrPattern seed={storeName + amount} />
+        </div>
+        <p className="font-mono-nota text-2xl font-bold text-stone-900 mb-1">{rupiah(amount)}</p>
+        <p className="text-[11px] text-stone-400 mb-5 leading-relaxed">Berlaku untuk semua e-wallet &amp; m-banking — GoPay, OVO, DANA, ShopeePay, BCA, dan lainnya.</p>
+        <button onClick={onConfirm} disabled={paying} className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-stone-900 text-white font-semibold text-sm hover:bg-stone-800 disabled:opacity-60">
+          {paying ? <><Loader2 className="w-4 h-4 animate-spin" /> Memeriksa Pembayaran...</> : <><CheckCircle2 className="w-4 h-4" /> Saya Sudah Bayar</>}
+        </button>
+        <p className="font-mono-nota text-[10px] text-stone-400 mt-3">Simulasi QRIS untuk demo — tombol di atas melanjutkan proses.</p>
+      </div>
+    </div>
+  );
+}
+
 function RegisterPage({ onBack, onRegistered, settings }) {
   const [step, setStep] = useState(1); // 1: data toko, 2: bayar
   const [form, setForm] = useState({ storeName: "", owner: "", email: "", password: "", confirmPassword: "", plan: "Pro" });
   const [paymentMethod, setPaymentMethod] = useState("qris");
   const [error, setError] = useState("");
   const [paying, setPaying] = useState(false);
+  const [showQris, setShowQris] = useState(false);
 
   const selectedPlan = SUBSCRIPTION_PLANS.find((p) => p.key === form.plan) || SUBSCRIPTION_PLANS[0];
 
@@ -788,6 +861,7 @@ function RegisterPage({ onBack, onRegistered, settings }) {
       };
       writeAccounts([...accounts, newAccount]);
       setPaying(false);
+      setShowQris(false);
       onRegistered(newAccount.email);
     }, 900);
   };
@@ -883,19 +957,29 @@ function RegisterPage({ onBack, onRegistered, settings }) {
               ))}
             </div>
 
-            <button onClick={pay} disabled={paying} className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-stone-900 text-white font-semibold text-sm hover:bg-stone-800 disabled:opacity-60">
-              {paying ? <><Loader2 className="w-4 h-4 animate-spin" /> Memproses Pembayaran...</> : <><CheckCircle2 className="w-4 h-4" /> Bayar {rupiah(selectedPlan.price)}</>}
+            <button onClick={() => (paymentMethod === "qris" ? setShowQris(true) : pay())} disabled={paying} className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-stone-900 text-white font-semibold text-sm hover:bg-stone-800 disabled:opacity-60">
+              {paying ? <><Loader2 className="w-4 h-4 animate-spin" /> Memproses Pembayaran...</> : <>{paymentMethod === "qris" ? <QrCode className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />} Bayar {rupiah(selectedPlan.price)}</>}
             </button>
             <p className="text-center font-mono-nota text-[10px] text-stone-400 mt-4">Simulasi pembayaran untuk keperluan demo — akun baru langsung Aktif setelah dikonfirmasi.</p>
           </>
         )}
       </div>
+
+      {showQris && (
+        <QrisPopup
+          amount={selectedPlan.price}
+          storeName={form.storeName.trim() || "Toko Anda"}
+          paying={paying}
+          onConfirm={pay}
+          onClose={() => setShowQris(false)}
+        />
+      )}
     </div>
   );
 }
 
 // ---------------- Landing ----------------
-function LandingPage({ onLogin, onRegister, onViewMenu, settings }) {
+function LandingPage({ onLogin, onRegister, onViewMenu, onAdminLogin, settings }) {
   const [menuOpen, setMenuOpen] = useState(false);
   return (
     <div className="min-h-screen bg-nota-paper text-stone-900">
@@ -1046,7 +1130,12 @@ function LandingPage({ onLogin, onRegister, onViewMenu, settings }) {
       <footer className="bg-ink py-8">
         <div className="max-w-7xl mx-auto px-5 sm:px-8 flex flex-col sm:flex-row items-center justify-between gap-3">
           <span className="font-display text-lg tracking-tight text-white">JA<span className="text-[#F0A202]">WARA</span></span>
-          <CopyrightFooter className="text-center text-xs text-white/40" />
+          <div className="flex flex-col sm:flex-row items-center gap-3">
+            <button onClick={onAdminLogin} className="inline-flex items-center gap-1.5 font-mono-nota text-[11px] text-white/50 hover:text-white transition-colors">
+              <Crown className="w-3.5 h-3.5" /> Masuk sebagai Admin Sistem
+            </button>
+            <CopyrightFooter className="text-center text-xs text-white/40" />
+          </div>
         </div>
       </footer>
     </div>
@@ -2542,7 +2631,16 @@ export default function App() {
   // for Super Admin, which isn't tied to any single store's subscription).
   const [account, setAccount] = useState(null);
   const [prefillEmail, setPrefillEmail] = useState("");
+  // Which role tab LoginPage should open on — set when entering via a
+  // specific door (e.g. the footer's "Admin Sistem" link) so that login
+  // isn't a guessing game about which of the 3 roles to pick.
+  const [loginRole, setLoginRole] = useState(null);
   const [settings, setSettings] = useLocalStorageState("jawara_settings", defaultSettings);
+
+  const openLogin = (roleKey) => {
+    setLoginRole(roleKey || null);
+    setPage("login");
+  };
 
   const handleLogin = (loginRole, loggedInAccount) => {
     setRole(loginRole || "admin");
@@ -2562,9 +2660,9 @@ export default function App() {
 
   if (page === "menu") return <MenuPage onBack={() => setPage("landing")} />;
   if (page === "register") return <RegisterPage onBack={() => setPage("landing")} onRegistered={handleRegistered} settings={settings} />;
-  if (page === "login") return <LoginPage onLogin={handleLogin} onBack={() => setPage("landing")} onGoRegister={() => setPage("register")} settings={settings} prefillEmail={prefillEmail} />;
+  if (page === "login") return <LoginPage onLogin={handleLogin} onBack={() => setPage("landing")} onGoRegister={() => setPage("register")} settings={settings} prefillEmail={prefillEmail} initialRole={loginRole} />;
   if (page === "dashboard") return <DashboardPage onLogout={handleLogout} settings={settings} setSettings={setSettings} role={role} account={account} />;
-  return <LandingPage onLogin={() => setPage("login")} onRegister={() => setPage("register")} onViewMenu={() => setPage("menu")} settings={settings} />;
+  return <LandingPage onLogin={() => openLogin()} onRegister={() => setPage("register")} onViewMenu={() => setPage("menu")} onAdminLogin={() => openLogin("superadmin")} settings={settings} />;
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App />);
